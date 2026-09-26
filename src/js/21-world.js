@@ -1,10 +1,11 @@
 /* =========================================================
    The world in motion: shelves and price boards, customers and
-   their request bubbles, the rival beans, what everyone carries,
-   and the rings that show what you're pointing at. It only
-   reads the game state; nothing here changes it.
+   their request bubbles, the rival beans and everyone's runners,
+   what they carry, score pops over your stall, and the rings
+   that show what you're pointing at. It only reads the game
+   state; nothing here changes it.
    ========================================================= */
-const WV={cust:new Map(),beans:new Map(),stalls:[],wars:new Map(),hover:null,target:null,me:null};
+const WV={cust:new Map(),beans:new Map(),runners:new Map(),stalls:[],pops:[],hover:null,target:null,me:null};
 const CHAR_SCALE=1.3;   // beans and customers are drawn a little larger than life, so you can read them from up here
 
 /* ---------- stalls: goods on the counter, a name plate and a price board ---------- */
@@ -40,11 +41,17 @@ function custMesh(c){
   m.traverse(o=>{if(o.isMesh)o.userData.cust=c.id;});
   return {m,bub,face:m.rotation.y,walk:Math.random()*6};
 }
-// a request bubble: what they still want and the most they'll spend (a shopping list shows the lot, on blue)
-function custBubble(c){
+// a request bubble: what they still want and the most they'll spend (a shopping list shows the lot, on blue).
+// On their way to pay: whose deal it is; orange if you could steal them.
+function custBubble(c,s){
   const icons=gs=>gs.map(g=>CM_TUNE.GOODS[g].icon).join('');
   if(c.ph==='think')return [`🤔 ${icons(c.want)}`,'think'];
-  if(c.ph==='go')return [`👍 ${icons(c.deal.items)} ${c.deal.total}`,'happy'];
+  if(c.ph==='go'){
+    const p=s.players[c.deal.p],me=s.players[CMG.me];
+    if(!p||c.deal.p===CMG.me)return [`👍 ${icons(c.deal.items)} ${c.deal.total}`,'happy'];
+    const can=me&&CMG.on&&CMSim.stealDeal(s,me,c).ok;
+    return [`👉 ${p.name} ${icons(c.deal.items)}${c.deal.total}`,can?'steal':'think'];
+  }
   if(c.ph==='buy')return ['🪙','happy'];
   if(c.ph==='leave')return c.happy?['😊','happy']:['😞','sad'];
   return [`${icons(c.want)} ≤${c.budget}`,c.kind==='list'?'list':'bubble'];
@@ -63,7 +70,7 @@ function worldCustomers(s,dt){
     if(moving)v.walk+=dt*9;
     m.position.y=moving?Math.abs(Math.sin(v.walk))*0.06:0;
     const sw=moving?Math.sin(v.walk)*0.6:0;m.userData.arms[0].rotation.x=sw;m.userData.arms[1].rotation.x=-sw;
-    const [txt,sty]=custBubble(c);cmText(v.bub,txt,sty);
+    const [txt,sty]=custBubble(c,s);cmText(v.bub,txt,sty);
     const o=inReachOfMine(s,c)?1:0.42;v.bub.material.opacity=lerp(v.bub.material.opacity,o,damp(8,dt));   // faded: out of your reach
   }
   for(const [id,v] of WV.cust)if(!seen.has(id)){scene.remove(v.m);WV.cust.delete(id);}
@@ -112,6 +119,33 @@ function worldRivals(s,dt,ts){
     if(v.sayT>0){v.sayT-=dt;if(v.sayT<=0)v.say.visible=false;}
   }
 }
+/* ---------- runners: small beans in their owner's colour, a basket when they've got something ---------- */
+function worldRunners(s,dt,ts){
+  const seen=new Set();
+  for(const r of s.runners){
+    seen.add(r.id);let v=WV.runners.get(r.id);
+    if(!v){const p=s.players[r.owner];const b=makeBean(p.col,DEFAULT_FIT,'');b.userData.tag.visible=false;b.scale.setScalar(CHAR_SCALE*0.72);
+      const cr=crate();cr.position.set(0,0.95,0.55);b.userData.rig.add(cr);b.position.set(r.x,0,r.z);scene.add(b);v={b,cr,face:0};WV.runners.set(r.id,v);}
+    const b=v.b,k=damp(16,dt),ox=b.position.x,oz=b.position.z;
+    b.position.x=lerp(b.position.x,r.x,k);b.position.z=lerp(b.position.z,r.z,k);
+    const sp=Math.hypot(b.position.x-ox,b.position.z-oz)/Math.max(dt,1e-3);
+    if(sp>0.4)v.face=Math.atan2(b.position.x-ox,b.position.z-oz);
+    b.rotation.y=angLerp(b.rotation.y,v.face,damp(12,dt));
+    animBean(b,{an:sp>0.4?1:0,hb:false},ts);
+    fillCrate(v.cr,r.carry);if(v.cr.visible)holdPose(b);
+  }
+  for(const [id,v] of WV.runners)if(!seen.has(id)){scene.remove(v.b);WV.runners.delete(id);}
+}
+// a sale's score floats up over your stall: "+30" and how it was made
+function scorePop(x,z,big,small){
+  const a=cmSprite(1.1),b=cmSprite(0.62);cmText(a,big,'pop');cmText(b,small,'popSmall');
+  a.position.set(x,3.4,z);b.position.set(x,2.8,z);scene.add(a,b);WV.pops.push({a,b,t:0});
+}
+function popsTick(dt){
+  for(let i=WV.pops.length-1;i>=0;i--){const q=WV.pops[i];q.t+=dt;
+    q.a.position.y+=dt*1.2;q.b.position.y+=dt*1.2;const o=Math.max(0,1-Math.max(0,q.t-0.9)/0.6);q.a.material.opacity=q.b.material.opacity=o;
+    if(q.t>1.5){scene.remove(q.a,q.b);WV.pops.splice(i,1);}}
+}
 function beanSay(id,text){const v=WV.beans.get(id);if(!v)return;cmText(v.say,text,'say');v.say.visible=true;v.sayT=3.2;}
 
 /* ---------- your sale range: customers inside this circle round your till can be pitched ---------- */
@@ -129,19 +163,6 @@ function reachZone(s){
   z.userData.fill.material.color.set(me.col);z.userData.edge.material.color.set(me.col);
 }
 const inReachOfMine=(s,c)=>{const me=s.players[CMG.me];if(!me)return true;const pa=CMSim.payAt(s.stalls[me.stall]);return Math.hypot(c.x-pa.x,c.z-pa.z)<=CMSim.reachOf(me);};
-
-/* ---------- price wars: a flame between the two stalls fighting over a good ---------- */
-function worldWars(s,ts){
-  const seen=new Set();
-  for(const [g,w] of Object.entries(s.wars)){
-    seen.add(g);let m=WV.wars.get(g);
-    if(!m){m=cmSprite(1.1);cmText(m,`🔥 Price war ${CM_TUNE.GOODS[g].icon}`,'war');scene.add(m);WV.wars.set(g,m);}
-    const a=s.players[w.a],b=s.players[w.b];if(!a||!b){m.visible=false;continue;}
-    const A=s.stalls[a.stall],B=s.stalls[b.stall];m.visible=true;
-    m.position.set((A.x+B.x)/2,5.1+0.15*Math.sin(ts*5),(A.z+B.z)/2);
-  }
-  for(const [g,m] of WV.wars)if(!seen.has(g)){scene.remove(m);WV.wars.delete(g);}
-}
 
 /* ---------- pointing: a ring under whatever the mouse is on, and one under what E would do ---------- */
 const HOVER_RING=(()=>{const m=new THREE.Mesh(new THREE.RingGeometry(0.62,0.82,32),new THREE.MeshBasicMaterial({color:0xFFFFFF,transparent:true,opacity:0.9,depthWrite:false}));
@@ -163,7 +184,7 @@ function ringAt(ring,s,t,scale,ts){
 }
 
 function worldSync(s,dt,ts){
-  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);worldWars(s,ts);
+  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);worldRunners(s,dt,ts);popsTick(dt);
   if(P.bean){const me=s.players[CMG.me];fillCrate(WV.me.cr,me?me.carry:{});if(WV.me.cr.visible)holdPose(P.bean);}
   ringAt(HOVER_RING,s,CMG.hover,1,ts);
   ringAt(TARGET_RING,s,CMG.ctx&&CMG.ctx.thing,1,ts);
@@ -174,5 +195,6 @@ function worldClear(){
   for(const v of WV.beans.values())scene.remove(v.b);WV.beans.clear();
   for(const V of WV.stalls){V.owner=undefined;V.plate.visible=V.board.visible=false;for(const sl of V.slots){sl.n=-1;sl.g.clear();}}
   HOVER_RING.visible=TARGET_RING.visible=false;if(WV.zone)WV.zone.visible=false;
-  for(const m of WV.wars.values())scene.remove(m);WV.wars.clear();
+  for(const v of WV.runners.values())scene.remove(v.b);WV.runners.clear();
+  for(const q of WV.pops)scene.remove(q.a,q.b);WV.pops=[];
 }

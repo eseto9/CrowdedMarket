@@ -5,7 +5,7 @@ export const THREE = TWO.concat([{ id: 'h', name: 'Hattie', ai: 'hoarder' }]);
 
 export function setup(opts = {}) {
   const lib = loadSim();
-  const init = { seed: opts.seed ?? 1234, diff: opts.diff || 'normal', len: opts.len, players: opts.players || TWO };
+  const init = { seed: opts.seed ?? 1234, diff: opts.diff || 'normal', players: opts.players || TWO };
   const s = lib.CMSim.newState(init);
   return { ...lib, s, init };
 }
@@ -18,10 +18,20 @@ export function away(s, id) { place(s, id, 0, -10); }
 export function shelf(s, i, stock) { s.stalls[i].stock = { ...stock }; }
 export function customer(s, over = {}) {
   const c = { id: 'c' + s.nid++, kind: 'budget', x: 0, z: -1, lane: -1, dir: 1, born: s.t, ph: 'walk', until: 0,
-    want: ['fruit'], budget: 6, got: [], pitches: [], pitched: {}, looked: [], deal: null, look: 1, ...over };
+    want: ['fruit'], budget: 6, got: [], pitches: [], pitched: {}, looked: [], deal: null, steals: 0, look: 1, ...over };
   s.cust.push(c); return c;
 }
 export function ticks(CMSim, s, n) { for (let i = 0; i < n; i++) CMSim.tick(s); }
+// a customer on their way to pay at stall i, having agreed a deal
+export function going(env, i, over = {}) {
+  const { s, CMSim } = env, st = s.stalls[i];
+  const items = over.items || ['fruit'], prices = Object.fromEntries(items.map(g => [g, st.price[g]]));
+  const pa = CMSim.payAt(st);
+  return customer(s, { ph: 'go', x: pa.x + 3, z: 0, want: items.slice(), budget: 30,
+    deal: { p: st.owner, stall: i, items, prices, total: items.reduce((a, g) => a + prices[g], 0), full: true }, ...over });
+}
+// close today's market right now (tests of the between-days shop)
+export function closeNow({ CMSim, s }) { s.tick = Math.round(s.day / 0.1) - 1; s.t = s.tick * 0.1; CMSim.tick(s); return s; }
 
 /** Play on: AIs step every tick, `script(s, act)` can add player actions. Returns the action log. */
 export function playDay({ CMSim, CMAI, s }, { until, script, mems } = {}) {

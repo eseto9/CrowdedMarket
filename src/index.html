@@ -18,45 +18,53 @@
 
 <section id="title">
   <h1 class="wordmark" id="wordmark" aria-label="Crowded Market"></h1>
-  <p class="tag">Run a stall on Market Street. Stock up, price it right and have the most coins when the closing bell rings.</p>
+  <p class="tag">Run a stall on a busy market street. Beat each day’s score target, build up your mult, and see how far your run goes.</p>
   <div class="panel setup">
     <div class="field"><label for="nameIn">Your name</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" placeholder="Pip"></div>
     <div class="field"><label>Your Wanderbean</label><div class="swatches" id="swatches"></div></div>
-    <div class="field"><label>Length of the day</label><div class="seg" id="lenSeg"><button type="button" data-len="short">1 minute</button><button type="button" data-len="normal">2 minutes</button><button type="button" data-len="long">3 minutes</button></div></div>
     <div class="field"><label>Rival shopkeepers</label><div class="seg" id="diffSeg"><button type="button" data-diff="easy">Easy</button><button type="button" data-diff="normal">Normal</button><button type="button" data-diff="hard">Hard</button></div></div>
     <ol class="how">
-      <li>🏃 Walk with <kbd>WASD</kbd>, dash with <kbd>Space</kbd>, or just click where to go.</li>
-      <li>🥖 Suppliers ring the market. Stand in a yellow ring and press <kbd>E</kbd> (or click it) to buy stock.</li>
-      <li>🧺 Take it back to your stall and put it on the shelf.</li>
-      <li>🗣️ Customers show what they want and the most they’ll spend. Stand at your stall and you sell to anyone in your ring; the cheapest offer wins.</li>
-      <li>🏷️ Press <kbd>P</kbd> at your stall to set prices. Blue bubbles are shopping lists: sell the whole list for a bonus.</li>
-      <li>🪙 Three days make a market week. Coins carry over, and you can buy upgrades between days. Leftover stock is worth nothing!</li>
+      <li>🎯 Each day is 75 seconds with a <b>score target</b>. Beat it to go on; miss it and the run is over. Every third day is a big one.</li>
+      <li>🧺 Stand at your stall: everyone in your ring gets an offer. Every sale scores <b>price × mult</b>, and your mult grows with every sale in a row.</li>
+      <li>🏃 Click a supplier to send your runner for stock. Lose a customer to a rival and your streak ends.</li>
+      <li>🫳 Customers on their way to a rival can be <b>stolen</b>: click them for a coin less.</li>
+      <li>🛍️ Between days, spend your coins in the shop on charms, staff and upgrades.</li>
     </ol>
-    <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Open your stall</button></div>
+    <p class="best" id="bestRun" hidden></p>
+    <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Start a run</button></div>
   </div>
 </section>
 
 <div id="hud" hidden>
-  <div id="clock" class="panel"><span id="part"></span><b id="time">2:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
-  <div id="scores" class="panel" aria-label="Coins"></div>
+  <div id="goal" class="panel">
+    <div class="gtop"><span id="runLbl"></span><span id="part"></span><b id="time">1:15</b></div>
+    <div class="gmid"><b id="score">0</b><span class="of">/ <b id="target">130</b></span><span id="mult" title="Your mult: every sale in a row adds to it">×1</span></div>
+    <div class="bar" aria-hidden="true"><i id="goalFill"></i></div>
+    <small id="streak"></small>
+  </div>
+  <div id="purse" class="panel"><b id="coins">🪙 0</b><div id="charms" aria-label="Your charms"></div></div>
   <div id="corner"><button id="mute" class="exitBtn" type="button">Sound on</button><button id="exitBtn" class="exitBtn" type="button">🚪 Leave</button></div>
-  <div id="stall" class="panel"></div>
+  <div id="stall" class="panel">
+    <h3>🧺 Your stall</h3>
+    <div id="stallGoods"></div>
+    <div class="seg" id="stanceSeg" aria-label="Your prices"><button type="button" data-stance="bargain" title="1: a coin off everything">🏷️ Bargain</button><button type="button" data-stance="fair" title="2: market prices">⚖️ Fair</button><button type="button" data-stance="premium" title="3: two coins on everything">💎 Premium</button></div>
+    <div id="runners"></div>
+    <div id="arms"></div>
+  </div>
   <div id="prompt" class="panel" hidden></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="feed" class="panel" aria-live="polite"></div>
   <div id="keys" class="panel">
-    <kbd>WASD</kbd><span>Walk</span>
-    <kbd>Space</kbd><span>Dash</span>
-    <kbd>Click</kbd><span>Go there and act</span>
-    <kbd>E</kbd><span>Buy · shelve · pitch</span>
-    <kbd>P</kbd><span>Your prices (at your stall)</span>
-    <kbd>Shift+E</kbd><span>Buy an armful</span>
-    <kbd>Tab</kbd><span>Market summary (hold)</span>
-    <kbd>1–5</kbd><span>Wave, point, dance…</span>
+    <kbd>Click</kbd><span>Supplier: send a runner</span>
+    <kbd>Click</kbd><span>Customer: pitch or steal</span>
+    <kbd>1 2 3</kbd><span>Bargain / Fair / Premium</span>
+    <kbd>E</kbd><span>Pitch · steal · grab</span>
+    <kbd>WASD</kbd><span>Walk · <kbd>Space</kbd> dash</span>
+    <kbd>⌫</kbd><span>Cancel last order</span>
+    <kbd>Tab</kbd><span>The market (hold)</span>
     <kbd>H</kbd><span>Hide this</span>
   </div>
-  <div id="prices" class="panel" hidden></div>
-  <div id="touchBtns"><button id="tPrices" type="button" hidden>🏷️ Prices</button><button id="tAll" type="button">🧺 Armful</button><button id="tAct" type="button">✋ Act</button><button id="tDash" type="button">💨 Dash</button></div>
+  <div id="touchBtns"><button id="tAct" type="button">✋ Act</button><button id="tDash" type="button">💨 Dash</button></div>
   <div id="tab" class="panel" hidden></div>
 </div>
 <div id="recap" hidden><div class="panel" id="recapBody"></div></div>
