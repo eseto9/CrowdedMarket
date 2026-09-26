@@ -1,0 +1,30 @@
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --ink:#2B2040; --paper:#FFFFFF; --text:#2B2040; --muted:#6B5F86;
+  --sun:#FFC83D; --coral:#FF6F61; --sea:#1FB5C9; --grape:#7A5CFA; --leaf:#4CC46B;
+  --glass:rgba(255,255,255,.94);
+  --hard:4px 4px 0 var(--ink);
+  --display:"Lilita One","Arial Rounded MT Bold","Trebuchet MS",sans-serif;
+  --body:"Nunito","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --paper:#2F2750; --text:#FFF8EC; --muted:#C9BEE8; --glass:rgba(47,39,80,.94); --ink:#140E26; }
+}
+:root[data-theme="dark"]{ --paper:#2F2750; --text:#FFF8EC; --muted:#C9BEE8; --glass:rgba(47,39,80,.94); --ink:#140E26; }
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0;overflow:hidden;background:#FFD7A8;font-family:var(--body);color:var(--text);-webkit-font-smoothing:antialiased}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;outline:none;touch-action:none}
+[hidden]{display:none!important}
+button{font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--grape);outline-offset:2px}
+.panel{background:var(--glass);border:3px solid var(--ink);border-radius:18px;box-shadow:var(--hard);color:var(--text)}
+.btn{border:3px solid var(--ink);border-radius:14px;padding:.55em 1.1em;font-weight:900;background:var(--sun);color:#2B2040;box-shadow:3px 3px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+.btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ink)}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.btn.alt{background:var(--paper);color:var(--text)}
+.btn.sea{background:var(--sea);color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+input[type=text],textarea{font:inherit;font-weight:800;border:3px solid var(--ink);border-radius:12px;padding:.5em .75em;background:#fff;color:#2B2040;width:100%}

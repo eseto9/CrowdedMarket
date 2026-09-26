@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Crowded Market</title>
+<meta name="description" content="Run a stall on a busy island market street. Stock up, price it right and outsell the other shopkeepers before the closing bell.">
+<meta name="theme-color" content="#FFD7A8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<!-- @styles -->
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="Market Street, seen from above"></canvas>
+<div id="nogl" hidden>Crowded Market needs WebGL. Try a recent version of Chrome, Edge, Firefox or Safari.</div>
+<div id="loading">Setting up the stalls…</div>
+
+<section id="title">
+  <h1 class="wordmark" id="wordmark" aria-label="Crowded Market"></h1>
+  <p class="tag">Run a stall on Market Street. Stock up, price it right and have the most coins when the closing bell rings.</p>
+  <div class="panel setup">
+    <div class="field"><label for="nameIn">Your name</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" placeholder="Pip"></div>
+    <div class="field"><label>Your Wanderbean</label><div class="swatches" id="swatches"></div></div>
+    <div class="field"><label>Rival shopkeepers</label><div class="seg" id="diffSeg"><button type="button" data-diff="easy">Easy</button><button type="button" data-diff="normal">Normal</button><button type="button" data-diff="hard">Hard</button></div></div>
+    <ol class="how">
+      <li>🏃 Walk with <kbd>WASD</kbd>, dash with <kbd>Space</kbd>, or just click where to go.</li>
+      <li>🥖 Suppliers ring the market. Stand in a yellow ring and press <kbd>E</kbd> (or click it) to buy stock.</li>
+      <li>🧺 Take it back to your stall and put it on the shelf.</li>
+      <li>🗣️ Customers show what they want and the most they’ll pay. Walk up and pitch. The cheapest pitch wins.</li>
+      <li>🪙 Most coins at the closing bell wins. Leftover stock is worth nothing!</li>
+    </ol>
+    <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Open your stall</button></div>
+  </div>
+</section>
+
+<div id="hud" hidden>
+  <div id="clock" class="panel"><span id="part"></span><b id="time">5:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
+  <div id="scores" class="panel" aria-label="Coins"></div>
+  <div id="corner"><button id="mute" class="exitBtn" type="button">Sound on</button><button id="exitBtn" class="exitBtn" type="button">🚪 Leave</button></div>
+  <div id="stall" class="panel"></div>
+  <div id="prompt" class="panel" hidden></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="feed" class="panel" aria-live="polite"></div>
+  <div id="keys" class="panel">
+    <kbd>WASD</kbd><span>Walk</span>
+    <kbd>Space</kbd><span>Dash</span>
+    <kbd>Click</kbd><span>Go there and act</span>
+    <kbd>E</kbd><span>Buy · shelve · pitch</span>
+    <kbd>Shift+E</kbd><span>Buy an armful</span>
+    <kbd>Tab</kbd><span>Market summary (hold)</span>
+    <kbd>1–5</kbd><span>Wave, point, dance…</span>
+    <kbd>H</kbd><span>Hide this</span>
+  </div>
+  <div id="touchBtns"><button id="tAll" type="button">🧺 Armful</button><button id="tAct" type="button">✋ Act</button><button id="tDash" type="button">💨 Dash</button></div>
+  <div id="tab" class="panel" hidden></div>
+</div>
+<div id="recap" hidden><div class="panel" id="recapBody"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<!-- @app -->
+</body>
+</html>
