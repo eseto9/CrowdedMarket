@@ -8,6 +8,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const icon=g=>CM_TUNE.GOODS[g].icon;
 const clockText=secs=>{const s=Math.max(0,Math.ceil(secs));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const HUD={t:0,coins:{},toastT:null,keysHidden:false};
+const warnAt=s=>Math.min(30,s.day*CM_TUNE.CLOSING_WARN);   // seconds left when closing time is announced
 try{HUD.keysHidden=localStorage.getItem('cm.keys')==='0';}catch(e){}
 
 function toast(msg,ms){const e=$('#toast');e.textContent=msg;e.classList.add('on');clearTimeout(HUD.toastT);HUD.toastT=setTimeout(()=>e.classList.remove('on'),ms||1600);}
@@ -22,11 +23,11 @@ function hudReset(){
 
 function hudRender(s,dt){
   HUD.t-=dt;if(HUD.t>0)return;HUD.t=0.1;
-  const T=CM_TUNE,left=T.DAY-s.t,part=T.PARTS.find(p=>p.k===s.part);
+  const T=CM_TUNE,left=s.day-s.t,part=T.PARTS.find(p=>p.k===s.part);
   $('#part').textContent=`${part.icon} ${part.label}`;
   $('#time').textContent=clockText(left);
-  $('#barFill').style.width=(100*s.t/T.DAY)+'%';
-  $('#clock').classList.toggle('late',s.phase==='day'&&left<=30);
+  $('#barFill').style.width=(100*s.t/s.day)+'%';
+  $('#clock').classList.toggle('late',s.phase==='day'&&left<=warnAt(s));
   // coins: you first, then everyone by coins
   const box=$('#scores'),rows=s.order.slice().sort((a,b)=>(a===CMG.me?-1:b===CMG.me?1:s.players[b].coins-s.players[a].coins));
   if(box.children.length!==rows.length){box.textContent='';for(const id of rows){const r=el('div','row'+(id===CMG.me?' me':''));r.dataset.id=id;

@@ -7,12 +7,14 @@
    ========================================================= */
 const CM_TUNE={
   DT:0.1,                    // one simulation tick
-  DAY:300,                   // a trading day
-  PARTS:[                    // day parts, by start time
-    {k:'morning',t:0,label:'Morning',icon:'🌅'},
-    {k:'midday',t:100,label:'Midday',icon:'☀️'},
-    {k:'evening',t:200,label:'Evening',icon:'🌇'},
+  DAYS:{short:60,normal:120,long:180},   // how long a trading day lasts (chosen on the title screen)
+  DAY_DEFAULT:'normal',
+  PARTS:[                    // day parts, starting at this fraction of the day
+    {k:'morning',f:0,label:'Morning',icon:'🌅'},
+    {k:'midday',f:1/3,label:'Midday',icon:'☀️'},
+    {k:'evening',f:2/3,label:'Evening',icon:'🌇'},
   ],
+  CLOSING_WARN:0.2,          // "closing soon!" when this much of the day is left (30 s at most)
 
   START_COINS:30,
   START_STOCK:{bread:3,fruit:3},   // every stall opens with this on the shelf
@@ -60,7 +62,7 @@ const CM_TUNE={
   SUPPLIER_RANGE:2.2,        // stand this close to a supplier to buy
   STALL_RANGE:2.6,           // ...to your stall (or its post) to shelve or set prices
   PITCH_RANGE:3.2,           // ...to a customer to pitch
-  STALL_REACH:7,             // a customer must be this close to your stall to be pitched
+  STALL_REACH:7,             // a customer must be this close to your stall's till to be pitched (the ring round your stall)
 
   // movement: everyone walks at the same speed; a dash is a short burst with a cooldown
   WALK:6,
@@ -74,7 +76,7 @@ const CM_TUNE={
   CUST_GO_SPEED:2.6,         // walking over to the stall they chose
   CUST_MAX:10,               // on the street at once
   CUST_LIFE:70,              // gives up and leaves after this long
-  SPAWN_GAP:{morning:[5,7],midday:[3.5,5],evening:[2.5,4]},
+  SPAWN_GAP:{morning:[3,4.5],midday:[2.2,3.3],evening:[1.6,2.6]},
   BROWSE:1.4,                // stops to look at a stall that has what they want
   BROWSE_NEAR:2.2,           // ...when it passes this close
   DECIDE:1.6,                // after the first pitch, how long other stalls get to pitch too

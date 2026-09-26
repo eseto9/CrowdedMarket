@@ -16,7 +16,7 @@ const CMSim=(()=>{
   function rnd(s){let t=(s.rng=(s.rng+0x6D2B79F5)>>>0);t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
   const between=(s,[a,b])=>a+rnd(s)*(b-a);
   function weighted(s,list){let sum=0;for(const [,w] of list)sum+=w;let r=rnd(s)*sum;for(const [k,w] of list){r-=w;if(r<0)return k;}return list[list.length-1][0];}
-  const partAt=t=>{let p=T.PARTS[0];for(const x of T.PARTS)if(t>=x.t)p=x;return p.k;};
+  const partAt=(t,day)=>{let p=T.PARTS[0];for(const x of T.PARTS)if(t>=x.f*day)p=x;return p.k;};
   const carried=p=>Object.values(p.carry).reduce((a,b)=>a+b,0);
   const side=st=>st.z<0?-1:1;   // -1: the row above the street, 1: below it
   // where the owner stands (street side, beside the till) and where a customer pays
@@ -57,7 +57,8 @@ const CMSim=(()=>{
 
   function newState(o){
     const seed=(o&&o.seed)>>>0;
-    const s={v:1,seed,rng:seed,tick:0,t:0,phase:'day',part:'morning',diff:(o&&o.diff)||'normal',
+    const len=T.DAYS[o&&o.len]?o.len:T.DAY_DEFAULT;
+    const s={v:1,seed,rng:seed,tick:0,t:0,len,day:T.DAYS[len],phase:'day',part:'morning',diff:(o&&o.diff)||'normal',
       players:{},order:[],stalls:[],sup:{},cust:[],nextCust:1.5,nid:1,feed:[],fid:1,recap:null};
     B.stalls.forEach((d,i)=>s.stalls.push({id:i,owner:null,x:d.x,z:d.z,stock:{},price:{}}));
     for(const [k,v] of Object.entries(T.SUPPLIERS))s.sup[k]={x:v.x,z:v.z};
@@ -225,8 +226,8 @@ const CMSim=(()=>{
   function tick(s){
     if(s.phase!=='day')return;
     s.tick++;s.t=Math.round(s.tick*T.DT*1000)/1000;
-    const part=partAt(s.t);if(part!==s.part){s.part=part;ev(s,'part',{part});}
-    if(s.t>=T.DAY){close(s);return;}
+    const part=partAt(s.t,s.day);if(part!==s.part){s.part=part;ev(s,'part',{part});}
+    if(s.t>=s.day){close(s);return;}
     if(s.t>=s.nextCust){
       if(s.cust.length<T.CUST_MAX)spawn(s);
       s.nextCust=r2(s.t+between(s,T.SPAWN_GAP[s.part]));
@@ -260,7 +261,7 @@ const CMSim=(()=>{
   /** Rebuild a day from its seed and players plus a log of [tick, action] pairs. */
   function replay(opts,log,untilTick){
     const s=newState(opts);let i=0;
-    const end=untilTick!=null?untilTick:Math.round(T.DAY/T.DT)+1;
+    const end=untilTick!=null?untilTick:Math.round(s.day/T.DT)+1;
     while(s.tick<end&&s.phase==='day'){
       while(i<log.length&&log[i][0]===s.tick)applyAction(s,log[i++][1]);
       tick(s);

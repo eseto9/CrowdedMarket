@@ -63,6 +63,7 @@ function worldCustomers(s,dt){
     m.position.y=moving?Math.abs(Math.sin(v.walk))*0.06:0;
     const sw=moving?Math.sin(v.walk)*0.6:0;m.userData.arms[0].rotation.x=sw;m.userData.arms[1].rotation.x=-sw;
     const [txt,sty]=custBubble(c);cmText(v.bub,txt,sty);
+    const o=inReachOfMine(s,c)?1:0.42;v.bub.material.opacity=lerp(v.bub.material.opacity,o,damp(8,dt));   // faded: out of your reach
   }
   for(const [id,v] of WV.cust)if(!seen.has(id)){scene.remove(v.m);WV.cust.delete(id);}
 }
@@ -112,6 +113,22 @@ function worldRivals(s,dt,ts){
 }
 function beanSay(id,text){const v=WV.beans.get(id);if(!v)return;cmText(v.say,text,'say');v.say.visible=true;v.sayT=3.2;}
 
+/* ---------- your sale range: customers inside this circle round your till can be pitched ---------- */
+function reachZone(s){
+  const me=s.players[CMG.me];if(!me){if(WV.zone)WV.zone.visible=false;return;}
+  if(!WV.zone){
+    const r=CM_TUNE.STALL_REACH,g=new THREE.Group();
+    const fill=new THREE.Mesh(new THREE.CircleGeometry(r,64),new THREE.MeshBasicMaterial({transparent:true,opacity:0.13,depthWrite:false}));
+    const edge=new THREE.Mesh(new THREE.RingGeometry(r-0.14,r,96),new THREE.MeshBasicMaterial({transparent:true,opacity:0.75,depthWrite:false}));
+    for(const m of[fill,edge]){m.rotation.x=-Math.PI/2;m.renderOrder=1;g.add(m);}
+    fill.position.y=0.03;edge.position.y=0.035;g.userData={fill,edge};scene.add(g);WV.zone=g;
+  }
+  const pa=CMSim.payAt(s.stalls[me.stall]),z=WV.zone;
+  z.visible=true;z.position.set(pa.x,0,pa.z);
+  z.userData.fill.material.color.set(me.col);z.userData.edge.material.color.set(me.col);
+}
+const inReachOfMine=(s,c)=>{const me=s.players[CMG.me];if(!me)return true;const pa=CMSim.payAt(s.stalls[me.stall]);return Math.hypot(c.x-pa.x,c.z-pa.z)<=CM_TUNE.STALL_REACH;};
+
 /* ---------- pointing: a ring under whatever the mouse is on, and one under what E would do ---------- */
 const HOVER_RING=(()=>{const m=new THREE.Mesh(new THREE.RingGeometry(0.62,0.82,32),new THREE.MeshBasicMaterial({color:0xFFFFFF,transparent:true,opacity:0.9,depthWrite:false}));
   m.rotation.x=-Math.PI/2;m.renderOrder=4;m.visible=false;scene.add(m);return m;})();
@@ -132,7 +149,7 @@ function ringAt(ring,s,t,scale,ts){
 }
 
 function worldSync(s,dt,ts){
-  worldStalls(s);worldCustomers(s,dt);worldRivals(s,dt,ts);
+  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);
   if(P.bean){const me=s.players[CMG.me];fillCrate(WV.me.cr,me?me.carry:{});if(WV.me.cr.visible)holdPose(P.bean);}
   ringAt(HOVER_RING,s,CMG.hover,1,ts);
   ringAt(TARGET_RING,s,CMG.ctx&&CMG.ctx.thing,1,ts);
@@ -142,5 +159,5 @@ function worldClear(){
   for(const v of WV.cust.values())scene.remove(v.m);WV.cust.clear();
   for(const v of WV.beans.values())scene.remove(v.b);WV.beans.clear();
   for(const V of WV.stalls){V.owner=undefined;V.plate.visible=V.board.visible=false;for(const sl of V.slots){sl.n=-1;sl.g.clear();}}
-  HOVER_RING.visible=TARGET_RING.visible=false;
+  HOVER_RING.visible=TARGET_RING.visible=false;if(WV.zone)WV.zone.visible=false;
 }

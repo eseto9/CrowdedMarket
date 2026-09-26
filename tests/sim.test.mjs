@@ -203,21 +203,28 @@ test('customers spawn from the seed, want one thing with a budget, walk the stre
     }
   }
   assert.ok(most <= T.CUST_MAX);
-  assert.ok(seen.size > 40, `only ${seen.size} customers all day`);
+  assert.ok(seen.size > s.day / 5, `only ${seen.size} customers in a ${s.day} s day`);
 });
 
-test('day parts change on time', () => {
-  const { s, CMSim, CM_TUNE: T } = setup();
-  const at = {};
-  while (s.phase === 'day') { CMSim.tick(s); at[s.part] ??= s.t; }
-  assert.equal(at.morning, T.DT);
-  assert.equal(at.midday, T.PARTS[1].t);
-  assert.equal(at.evening, T.PARTS[2].t);
+test('a day lasts 1, 2 or 3 minutes, in three equal parts', () => {
+  const { CMSim, CM_TUNE: T } = setup();
+  assert.deepEqual(Object.values(T.DAYS), [60, 120, 180]);
+  for (const [len, day] of Object.entries(T.DAYS)) {
+    const s = CMSim.newState({ seed: 3, len, players: [{ id: 'me' }] });
+    assert.equal(s.day, day);
+    const at = {};
+    while (s.phase === 'day') { CMSim.tick(s); at[s.part] ??= s.t; }
+    assert.equal(s.t, day, `${len}: closes on time`);
+    assert.equal(at.morning, T.DT);
+    assert.equal(at.midday, day / 3);
+    assert.equal(at.evening, day * 2 / 3);
+  }
+  assert.equal(CMSim.newState({ seed: 1, len: 'forever', players: [] }).day, T.DAYS[T.DAY_DEFAULT]);
 });
 
 test('same seed, same day; a different seed, a different day', () => {
   const a = setup({ seed: 7 }), b = setup({ seed: 7 }), c = setup({ seed: 8 });
-  for (const x of [a, b, c]) for (let i = 0; i < 1500; i++) x.CMSim.tick(x.s);
+  for (const x of [a, b, c]) for (let i = 0; i < 900; i++) x.CMSim.tick(x.s);   // most of a 2-minute day
   assert.deepEqual(a.s, b.s);
   assert.notDeepEqual(a.s.cust, c.s.cust);
 });
@@ -227,7 +234,7 @@ test('closing: stock is worthless, actions stop, the recap ranks everyone and ha
   s.players.me.carry = { fish: 2 };
   while (s.phase === 'day') CMSim.tick(s);
   assert.equal(s.phase, 'closed');
-  assert.equal(s.t, T.DAY);
+  assert.equal(s.t, s.day);
   assert.deepEqual(s.cust, []);
   assert.equal(CMSim.applyAction(s, { type: 'move', player: 'me', x: 0, z: 0 }).reason, 'closed');
   const rows = s.recap.rows;
@@ -239,7 +246,8 @@ test('closing: stock is worthless, actions stop, the recap ranks everyone and ha
   const per = {}; for (const t of s.recap.titles) per[t.p] = (per[t.p] || 0) + 1;
   assert.ok(Object.values(per).every(n => n <= 2), 'nobody gets more than two titles');
   CMSim.tick(s);
-  assert.equal(s.t, T.DAY);   // the clock stops
+  assert.equal(s.t, s.day);   // the clock stops
+  void T;
 });
 
 test('replay: the seed plus the action log rebuilds the exact same day', () => {
@@ -253,7 +261,7 @@ test('replay: the seed plus the action log rebuilds the exact same day', () => {
     const [x, z] = pts[leg], d = Math.hypot(x - p.x, z - p.z), k = Math.min(1, T.WALK * T.DT / (d || 1)); act({ type: 'move', player: 'me', x: p.x + (x - p.x) * k, z: p.z + (z - p.z) * k }); };
   let phase = 'out';
   const { log, results } = playDay(env, {
-    until: 1500,
+    until: 1000,
     script: (s, act) => {
       const p = s.players.me;
       if (phase === 'out') { walk(s, act, route); if (Math.hypot(p.x - sup.x, p.z - sup.z) < 0.3) { act({ type: 'buy', player: 'me', item: 'bread', n: 4 }); phase = 'back'; leg = 0; } }

@@ -98,7 +98,7 @@ const CMAI=(()=>{
     let best=null;
     for(const [g,G] of Object.entries(T.GOODS)){
       const sp=s.sup[g],trip=(S.dist(pos.x,pos.z,sp.x,sp.z)+S.dist(sp.x,sp.z,st.x,st.z))/speed+2;
-      const left=T.DAY-s.t-trip;if(left<10)continue;
+      const left=s.day-s.t-trip;if(left<6)continue;
       const demand=left*rate*G.weight/W*A.share-(st.stock[g]||0);
       const n=Math.min(T.CARRY,Math.floor(p.coins/G.cost),T.SHELF_MAX-(st.stock[g]||0),Math.ceil(demand));if(n<=0)continue;
       const price=Math.max(G.cost+R.floorMargin,Math.round(G.list*R.startMult));

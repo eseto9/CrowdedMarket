@@ -22,12 +22,13 @@
   <div class="panel setup">
     <div class="field"><label for="nameIn">Your name</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" placeholder="Pip"></div>
     <div class="field"><label>Your Wanderbean</label><div class="swatches" id="swatches"></div></div>
+    <div class="field"><label>Length of the day</label><div class="seg" id="lenSeg"><button type="button" data-len="short">1 minute</button><button type="button" data-len="normal">2 minutes</button><button type="button" data-len="long">3 minutes</button></div></div>
     <div class="field"><label>Rival shopkeepers</label><div class="seg" id="diffSeg"><button type="button" data-diff="easy">Easy</button><button type="button" data-diff="normal">Normal</button><button type="button" data-diff="hard">Hard</button></div></div>
     <ol class="how">
       <li>🏃 Walk with <kbd>WASD</kbd>, dash with <kbd>Space</kbd>, or just click where to go.</li>
       <li>🥖 Suppliers ring the market. Stand in a yellow ring and press <kbd>E</kbd> (or click it) to buy stock.</li>
       <li>🧺 Take it back to your stall and put it on the shelf.</li>
-      <li>🗣️ Customers show what they want and the most they’ll pay. Walk up and pitch. The cheapest pitch wins.</li>
+      <li>🗣️ Customers show what they want and the most they’ll pay. Pitch to anyone inside the ring round your stall. The cheapest pitch wins.</li>
       <li>🪙 Most coins at the closing bell wins. Leftover stock is worth nothing!</li>
     </ol>
     <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Open your stall</button></div>
@@ -35,7 +36,7 @@
 </section>
 
 <div id="hud" hidden>
-  <div id="clock" class="panel"><span id="part"></span><b id="time">5:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
+  <div id="clock" class="panel"><span id="part"></span><b id="time">2:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
   <div id="scores" class="panel" aria-label="Coins"></div>
   <div id="corner"><button id="mute" class="exitBtn" type="button">Sound on</button><button id="exitBtn" class="exitBtn" type="button">🚪 Leave</button></div>
   <div id="stall" class="panel"></div>

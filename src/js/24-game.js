@@ -6,8 +6,8 @@
    runs CMSim.tick; a multiplayer host will do the same later.
    ========================================================= */
 const CMG={on:false,s:null,init:null,me:'me',mems:[],log:[],queue:[],acc:0,lastFid:0,ctx:null,hover:null,goal:null,bell:0,demo:null,
-  cfg:{name:'',col:BEAN_COLORS[5],diff:'normal'}};
-try{const c=JSON.parse(localStorage.getItem('cm.me')||'{}');if(typeof c.name==='string')CMG.cfg.name=clean(c.name);if(BEAN_COLORS.includes(c.col))CMG.cfg.col=c.col;if(CM_TUNE.AI.think[c.diff])CMG.cfg.diff=c.diff;}catch(e){}
+  cfg:{name:'',col:BEAN_COLORS[5],diff:'normal',len:CM_TUNE.DAY_DEFAULT}};
+try{const c=JSON.parse(localStorage.getItem('cm.me')||'{}');if(typeof c.name==='string')CMG.cfg.name=clean(c.name);if(BEAN_COLORS.includes(c.col))CMG.cfg.col=c.col;if(CM_TUNE.AI.think[c.diff])CMG.cfg.diff=c.diff;if(CM_TUNE.DAYS[c.len])CMG.cfg.len=c.len;}catch(e){}
 function clean(s,n){return String(s==null?'':s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g,'').trim().slice(0,n||14);}
 // your bean
 const P={pos:new V3(),vel:new V3(),face:0,bean:null,dashT:0,dashCD:0,an:0,em:null,emAt:0};
@@ -21,8 +21,10 @@ function titleRender(){
     const b=document.createElement('button');b.type='button';b.className='sw';b.style.background=c;b.setAttribute('aria-label','Colour '+c);b.setAttribute('aria-pressed',c===CMG.cfg.col);
     b.onclick=()=>{CMG.cfg.col=c;titleRender();};sw.appendChild(b);}
   for(const b of $('#diffSeg').children)b.setAttribute('aria-pressed',b.dataset.diff===CMG.cfg.diff);
+  for(const b of $('#lenSeg').children)b.setAttribute('aria-pressed',b.dataset.len===CMG.cfg.len);
 }
 $('#diffSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CMG.cfg.diff=b.dataset.diff;titleRender();});
+$('#lenSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CMG.cfg.len=b.dataset.len;titleRender();});
 $('#nameIn').addEventListener('input',e=>{CMG.cfg.name=clean(e.target.value);});
 $('#nameIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();gameStart();}});
 $('#startBtn').addEventListener('click',()=>gameStart());
@@ -52,7 +54,7 @@ function gameStart(){
   CMG.demo=null;worldClear();
   const R=CM_TUNE.RIVALS.undercutter;
   const seed=1+Math.floor(Math.random()*2147483646);
-  CMG.init={seed,diff:cfg.diff,players:[{id:'me',name:cfg.name,col:cfg.col},{id:'u',name:R.name,col:R.col,ai:'undercutter'}]};
+  CMG.init={seed,diff:cfg.diff,len:cfg.len,players:[{id:'me',name:cfg.name,col:cfg.col},{id:'u',name:R.name,col:R.col,ai:'undercutter'}]};
   CMG.s=CMSim.newState(CMG.init);
   CMG.mems=CMG.s.order.filter(id=>CMG.s.players[id].ai).map((id,i)=>CMAI.newMem(id,CMG.s.players[id].ai,cfg.diff,seed+i+1));
   Object.assign(CMG,{log:[],queue:[],acc:0,lastFid:0,goal:null,hover:null,ctx:null,bell:0,on:true});
@@ -281,7 +283,7 @@ function gameFrame(dt,ts){
     CMG.acc+=dt;let n=0;
     while(CMG.acc>=CM_TUNE.DT&&n<5){gameStep();CMG.acc-=CM_TUNE.DT;n++;}
     if(n===5)CMG.acc=0;   // a long hitch: skip ahead rather than race to catch up
-    if(CM_TUNE.DAY-s.t<=30&&!CMG.bell){CMG.bell=1;toast('🔔 30 seconds\nuntil closing!',1800);bell();}
+    if(s.day-s.t<=warnAt(s)&&!CMG.bell){CMG.bell=1;toast(`🔔 ${Math.round(warnAt(s))} seconds\nuntil closing!`,1800);bell();}
   }
   animBean(P.bean,{an:P.an,em:P.em,emAt:P.emAt,hb:false},ts);
   for(const e of s.feed)if(e.id>CMG.lastFid){CMG.lastFid=e.id;onEvent(s,e);}

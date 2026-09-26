@@ -10,8 +10,8 @@ test('the Undercutter trades a whole day through the same actions as a player', 
   const { s, CM_TUNE: T, CMSim } = env;
   assert.equal(s.phase, 'closed');
   const u = s.recap.rows.find(r => r.id === 'u');
-  assert.ok(u.sales >= 15, `only ${u.sales} sales`);
-  assert.ok(u.coins > T.START_COINS + 20, `ended with ${u.coins}`);
+  assert.ok(u.sales >= s.day / 15, `only ${u.sales} sales in ${s.day} s`);
+  assert.ok(u.coins > T.START_COINS + s.day / 10, `ended with ${u.coins}`);
   assert.ok(results.some(x => x.a.type === 'buy' && x.r.ok), 'never restocked');
   assert.ok(results.some(x => x.a.type === 'shelve' && x.r.ok), 'never shelved');
   // no speeding, and (apart from customers moving on mid-pitch) nothing refused

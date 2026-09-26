@@ -184,12 +184,13 @@ kbd{display:inline-block;font-family:var(--display);font-size:.9em;background:#f
   <div class="panel setup">
     <div class="field"><label for="nameIn">Your name</label><input id="nameIn" type="text" maxlength="14" autocomplete="off" placeholder="Pip"></div>
     <div class="field"><label>Your Wanderbean</label><div class="swatches" id="swatches"></div></div>
+    <div class="field"><label>Length of the day</label><div class="seg" id="lenSeg"><button type="button" data-len="short">1 minute</button><button type="button" data-len="normal">2 minutes</button><button type="button" data-len="long">3 minutes</button></div></div>
     <div class="field"><label>Rival shopkeepers</label><div class="seg" id="diffSeg"><button type="button" data-diff="easy">Easy</button><button type="button" data-diff="normal">Normal</button><button type="button" data-diff="hard">Hard</button></div></div>
     <ol class="how">
       <li>🏃 Walk with <kbd>WASD</kbd>, dash with <kbd>Space</kbd>, or just click where to go.</li>
       <li>🥖 Suppliers ring the market. Stand in a yellow ring and press <kbd>E</kbd> (or click it) to buy stock.</li>
       <li>🧺 Take it back to your stall and put it on the shelf.</li>
-      <li>🗣️ Customers show what they want and the most they’ll pay. Walk up and pitch. The cheapest pitch wins.</li>
+      <li>🗣️ Customers show what they want and the most they’ll pay. Pitch to anyone inside the ring round your stall. The cheapest pitch wins.</li>
       <li>🪙 Most coins at the closing bell wins. Leftover stock is worth nothing!</li>
     </ol>
     <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Open your stall</button></div>
@@ -197,7 +198,7 @@ kbd{display:inline-block;font-family:var(--display);font-size:.9em;background:#f
 </section>
 
 <div id="hud" hidden>
-  <div id="clock" class="panel"><span id="part"></span><b id="time">5:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
+  <div id="clock" class="panel"><span id="part"></span><b id="time">2:00</b><div class="bar" aria-hidden="true"><i id="barFill"></i></div></div>
   <div id="scores" class="panel" aria-label="Coins"></div>
   <div id="corner"><button id="mute" class="exitBtn" type="button">Sound on</button><button id="exitBtn" class="exitBtn" type="button">🚪 Leave</button></div>
   <div id="stall" class="panel"></div>
@@ -997,12 +998,14 @@ $('#mute').addEventListener('click',()=>{audioInit();toggleMute();});
    ========================================================= */
 const CM_TUNE={
   DT:0.1,                    // one simulation tick
-  DAY:300,                   // a trading day
-  PARTS:[                    // day parts, by start time
-    {k:'morning',t:0,label:'Morning',icon:'🌅'},
-    {k:'midday',t:100,label:'Midday',icon:'☀️'},
-    {k:'evening',t:200,label:'Evening',icon:'🌇'},
+  DAYS:{short:60,normal:120,long:180},   // how long a trading day lasts (chosen on the title screen)
+  DAY_DEFAULT:'normal',
+  PARTS:[                    // day parts, starting at this fraction of the day
+    {k:'morning',f:0,label:'Morning',icon:'🌅'},
+    {k:'midday',f:1/3,label:'Midday',icon:'☀️'},
+    {k:'evening',f:2/3,label:'Evening',icon:'🌇'},
   ],
+  CLOSING_WARN:0.2,          // "closing soon!" when this much of the day is left (30 s at most)
 
   START_COINS:30,
   START_STOCK:{bread:3,fruit:3},   // every stall opens with this on the shelf
@@ -1050,7 +1053,7 @@ const CM_TUNE={
   SUPPLIER_RANGE:2.2,        // stand this close to a supplier to buy
   STALL_RANGE:2.6,           // ...to your stall (or its post) to shelve or set prices
   PITCH_RANGE:3.2,           // ...to a customer to pitch
-  STALL_REACH:7,             // a customer must be this close to your stall to be pitched
+  STALL_REACH:7,             // a customer must be this close to your stall's till to be pitched (the ring round your stall)
 
   // movement: everyone walks at the same speed; a dash is a short burst with a cooldown
   WALK:6,
@@ -1064,7 +1067,7 @@ const CM_TUNE={
   CUST_GO_SPEED:2.6,         // walking over to the stall they chose
   CUST_MAX:10,               // on the street at once
   CUST_LIFE:70,              // gives up and leaves after this long
-  SPAWN_GAP:{morning:[5,7],midday:[3.5,5],evening:[2.5,4]},
+  SPAWN_GAP:{morning:[3,4.5],midday:[2.2,3.3],evening:[1.6,2.6]},
   BROWSE:1.4,                // stops to look at a stall that has what they want
   BROWSE_NEAR:2.2,           // ...when it passes this close
   DECIDE:1.6,                // after the first pitch, how long other stalls get to pitch too
@@ -1111,7 +1114,7 @@ const CMSim=(()=>{
   function rnd(s){let t=(s.rng=(s.rng+0x6D2B79F5)>>>0);t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
   const between=(s,[a,b])=>a+rnd(s)*(b-a);
   function weighted(s,list){let sum=0;for(const [,w] of list)sum+=w;let r=rnd(s)*sum;for(const [k,w] of list){r-=w;if(r<0)return k;}return list[list.length-1][0];}
-  const partAt=t=>{let p=T.PARTS[0];for(const x of T.PARTS)if(t>=x.t)p=x;return p.k;};
+  const partAt=(t,day)=>{let p=T.PARTS[0];for(const x of T.PARTS)if(t>=x.f*day)p=x;return p.k;};
   const carried=p=>Object.values(p.carry).reduce((a,b)=>a+b,0);
   const side=st=>st.z<0?-1:1;   // -1: the row above the street, 1: below it
   // where the owner stands (street side, beside the till) and where a customer pays
@@ -1152,7 +1155,8 @@ const CMSim=(()=>{
 
   function newState(o){
     const seed=(o&&o.seed)>>>0;
-    const s={v:1,seed,rng:seed,tick:0,t:0,phase:'day',part:'morning',diff:(o&&o.diff)||'normal',
+    const len=T.DAYS[o&&o.len]?o.len:T.DAY_DEFAULT;
+    const s={v:1,seed,rng:seed,tick:0,t:0,len,day:T.DAYS[len],phase:'day',part:'morning',diff:(o&&o.diff)||'normal',
       players:{},order:[],stalls:[],sup:{},cust:[],nextCust:1.5,nid:1,feed:[],fid:1,recap:null};
     B.stalls.forEach((d,i)=>s.stalls.push({id:i,owner:null,x:d.x,z:d.z,stock:{},price:{}}));
     for(const [k,v] of Object.entries(T.SUPPLIERS))s.sup[k]={x:v.x,z:v.z};
@@ -1320,8 +1324,8 @@ const CMSim=(()=>{
   function tick(s){
     if(s.phase!=='day')return;
     s.tick++;s.t=Math.round(s.tick*T.DT*1000)/1000;
-    const part=partAt(s.t);if(part!==s.part){s.part=part;ev(s,'part',{part});}
-    if(s.t>=T.DAY){close(s);return;}
+    const part=partAt(s.t,s.day);if(part!==s.part){s.part=part;ev(s,'part',{part});}
+    if(s.t>=s.day){close(s);return;}
     if(s.t>=s.nextCust){
       if(s.cust.length<T.CUST_MAX)spawn(s);
       s.nextCust=r2(s.t+between(s,T.SPAWN_GAP[s.part]));
@@ -1355,7 +1359,7 @@ const CMSim=(()=>{
   /** Rebuild a day from its seed and players plus a log of [tick, action] pairs. */
   function replay(opts,log,untilTick){
     const s=newState(opts);let i=0;
-    const end=untilTick!=null?untilTick:Math.round(T.DAY/T.DT)+1;
+    const end=untilTick!=null?untilTick:Math.round(s.day/T.DT)+1;
     while(s.tick<end&&s.phase==='day'){
       while(i<log.length&&log[i][0]===s.tick)applyAction(s,log[i++][1]);
       tick(s);
@@ -1466,7 +1470,7 @@ const CMAI=(()=>{
     let best=null;
     for(const [g,G] of Object.entries(T.GOODS)){
       const sp=s.sup[g],trip=(S.dist(pos.x,pos.z,sp.x,sp.z)+S.dist(sp.x,sp.z,st.x,st.z))/speed+2;
-      const left=T.DAY-s.t-trip;if(left<10)continue;
+      const left=s.day-s.t-trip;if(left<6)continue;
       const demand=left*rate*G.weight/W*A.share-(st.stock[g]||0);
       const n=Math.min(T.CARRY,Math.floor(p.coins/G.cost),T.SHELF_MAX-(st.stock[g]||0),Math.ceil(demand));if(n<=0)continue;
       const price=Math.max(G.cost+R.floorMargin,Math.round(G.list*R.startMult));
@@ -1821,6 +1825,7 @@ function worldCustomers(s,dt){
     m.position.y=moving?Math.abs(Math.sin(v.walk))*0.06:0;
     const sw=moving?Math.sin(v.walk)*0.6:0;m.userData.arms[0].rotation.x=sw;m.userData.arms[1].rotation.x=-sw;
     const [txt,sty]=custBubble(c);cmText(v.bub,txt,sty);
+    const o=inReachOfMine(s,c)?1:0.42;v.bub.material.opacity=lerp(v.bub.material.opacity,o,damp(8,dt));   // faded: out of your reach
   }
   for(const [id,v] of WV.cust)if(!seen.has(id)){scene.remove(v.m);WV.cust.delete(id);}
 }
@@ -1870,6 +1875,22 @@ function worldRivals(s,dt,ts){
 }
 function beanSay(id,text){const v=WV.beans.get(id);if(!v)return;cmText(v.say,text,'say');v.say.visible=true;v.sayT=3.2;}
 
+/* ---------- your sale range: customers inside this circle round your till can be pitched ---------- */
+function reachZone(s){
+  const me=s.players[CMG.me];if(!me){if(WV.zone)WV.zone.visible=false;return;}
+  if(!WV.zone){
+    const r=CM_TUNE.STALL_REACH,g=new THREE.Group();
+    const fill=new THREE.Mesh(new THREE.CircleGeometry(r,64),new THREE.MeshBasicMaterial({transparent:true,opacity:0.13,depthWrite:false}));
+    const edge=new THREE.Mesh(new THREE.RingGeometry(r-0.14,r,96),new THREE.MeshBasicMaterial({transparent:true,opacity:0.75,depthWrite:false}));
+    for(const m of[fill,edge]){m.rotation.x=-Math.PI/2;m.renderOrder=1;g.add(m);}
+    fill.position.y=0.03;edge.position.y=0.035;g.userData={fill,edge};scene.add(g);WV.zone=g;
+  }
+  const pa=CMSim.payAt(s.stalls[me.stall]),z=WV.zone;
+  z.visible=true;z.position.set(pa.x,0,pa.z);
+  z.userData.fill.material.color.set(me.col);z.userData.edge.material.color.set(me.col);
+}
+const inReachOfMine=(s,c)=>{const me=s.players[CMG.me];if(!me)return true;const pa=CMSim.payAt(s.stalls[me.stall]);return Math.hypot(c.x-pa.x,c.z-pa.z)<=CM_TUNE.STALL_REACH;};
+
 /* ---------- pointing: a ring under whatever the mouse is on, and one under what E would do ---------- */
 const HOVER_RING=(()=>{const m=new THREE.Mesh(new THREE.RingGeometry(0.62,0.82,32),new THREE.MeshBasicMaterial({color:0xFFFFFF,transparent:true,opacity:0.9,depthWrite:false}));
   m.rotation.x=-Math.PI/2;m.renderOrder=4;m.visible=false;scene.add(m);return m;})();
@@ -1890,7 +1911,7 @@ function ringAt(ring,s,t,scale,ts){
 }
 
 function worldSync(s,dt,ts){
-  worldStalls(s);worldCustomers(s,dt);worldRivals(s,dt,ts);
+  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);
   if(P.bean){const me=s.players[CMG.me];fillCrate(WV.me.cr,me?me.carry:{});if(WV.me.cr.visible)holdPose(P.bean);}
   ringAt(HOVER_RING,s,CMG.hover,1,ts);
   ringAt(TARGET_RING,s,CMG.ctx&&CMG.ctx.thing,1,ts);
@@ -1900,7 +1921,7 @@ function worldClear(){
   for(const v of WV.cust.values())scene.remove(v.m);WV.cust.clear();
   for(const v of WV.beans.values())scene.remove(v.b);WV.beans.clear();
   for(const V of WV.stalls){V.owner=undefined;V.plate.visible=V.board.visible=false;for(const sl of V.slots){sl.n=-1;sl.g.clear();}}
-  HOVER_RING.visible=TARGET_RING.visible=false;
+  HOVER_RING.visible=TARGET_RING.visible=false;if(WV.zone)WV.zone.visible=false;
 }
 /* =========================================================
    The HUD: clock, coins, your stall, what E will do, the event
@@ -1912,6 +1933,7 @@ function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className
 const icon=g=>CM_TUNE.GOODS[g].icon;
 const clockText=secs=>{const s=Math.max(0,Math.ceil(secs));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const HUD={t:0,coins:{},toastT:null,keysHidden:false};
+const warnAt=s=>Math.min(30,s.day*CM_TUNE.CLOSING_WARN);   // seconds left when closing time is announced
 try{HUD.keysHidden=localStorage.getItem('cm.keys')==='0';}catch(e){}
 
 function toast(msg,ms){const e=$('#toast');e.textContent=msg;e.classList.add('on');clearTimeout(HUD.toastT);HUD.toastT=setTimeout(()=>e.classList.remove('on'),ms||1600);}
@@ -1926,11 +1948,11 @@ function hudReset(){
 
 function hudRender(s,dt){
   HUD.t-=dt;if(HUD.t>0)return;HUD.t=0.1;
-  const T=CM_TUNE,left=T.DAY-s.t,part=T.PARTS.find(p=>p.k===s.part);
+  const T=CM_TUNE,left=s.day-s.t,part=T.PARTS.find(p=>p.k===s.part);
   $('#part').textContent=`${part.icon} ${part.label}`;
   $('#time').textContent=clockText(left);
-  $('#barFill').style.width=(100*s.t/T.DAY)+'%';
-  $('#clock').classList.toggle('late',s.phase==='day'&&left<=30);
+  $('#barFill').style.width=(100*s.t/s.day)+'%';
+  $('#clock').classList.toggle('late',s.phase==='day'&&left<=warnAt(s));
   // coins: you first, then everyone by coins
   const box=$('#scores'),rows=s.order.slice().sort((a,b)=>(a===CMG.me?-1:b===CMG.me?1:s.players[b].coins-s.players[a].coins));
   if(box.children.length!==rows.length){box.textContent='';for(const id of rows){const r=el('div','row'+(id===CMG.me?' me':''));r.dataset.id=id;
@@ -2064,8 +2086,8 @@ $('#tAll').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagati
    runs CMSim.tick; a multiplayer host will do the same later.
    ========================================================= */
 const CMG={on:false,s:null,init:null,me:'me',mems:[],log:[],queue:[],acc:0,lastFid:0,ctx:null,hover:null,goal:null,bell:0,demo:null,
-  cfg:{name:'',col:BEAN_COLORS[5],diff:'normal'}};
-try{const c=JSON.parse(localStorage.getItem('cm.me')||'{}');if(typeof c.name==='string')CMG.cfg.name=clean(c.name);if(BEAN_COLORS.includes(c.col))CMG.cfg.col=c.col;if(CM_TUNE.AI.think[c.diff])CMG.cfg.diff=c.diff;}catch(e){}
+  cfg:{name:'',col:BEAN_COLORS[5],diff:'normal',len:CM_TUNE.DAY_DEFAULT}};
+try{const c=JSON.parse(localStorage.getItem('cm.me')||'{}');if(typeof c.name==='string')CMG.cfg.name=clean(c.name);if(BEAN_COLORS.includes(c.col))CMG.cfg.col=c.col;if(CM_TUNE.AI.think[c.diff])CMG.cfg.diff=c.diff;if(CM_TUNE.DAYS[c.len])CMG.cfg.len=c.len;}catch(e){}
 function clean(s,n){return String(s==null?'':s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g,'').trim().slice(0,n||14);}
 // your bean
 const P={pos:new V3(),vel:new V3(),face:0,bean:null,dashT:0,dashCD:0,an:0,em:null,emAt:0};
@@ -2079,8 +2101,10 @@ function titleRender(){
     const b=document.createElement('button');b.type='button';b.className='sw';b.style.background=c;b.setAttribute('aria-label','Colour '+c);b.setAttribute('aria-pressed',c===CMG.cfg.col);
     b.onclick=()=>{CMG.cfg.col=c;titleRender();};sw.appendChild(b);}
   for(const b of $('#diffSeg').children)b.setAttribute('aria-pressed',b.dataset.diff===CMG.cfg.diff);
+  for(const b of $('#lenSeg').children)b.setAttribute('aria-pressed',b.dataset.len===CMG.cfg.len);
 }
 $('#diffSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CMG.cfg.diff=b.dataset.diff;titleRender();});
+$('#lenSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CMG.cfg.len=b.dataset.len;titleRender();});
 $('#nameIn').addEventListener('input',e=>{CMG.cfg.name=clean(e.target.value);});
 $('#nameIn').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();gameStart();}});
 $('#startBtn').addEventListener('click',()=>gameStart());
@@ -2110,7 +2134,7 @@ function gameStart(){
   CMG.demo=null;worldClear();
   const R=CM_TUNE.RIVALS.undercutter;
   const seed=1+Math.floor(Math.random()*2147483646);
-  CMG.init={seed,diff:cfg.diff,players:[{id:'me',name:cfg.name,col:cfg.col},{id:'u',name:R.name,col:R.col,ai:'undercutter'}]};
+  CMG.init={seed,diff:cfg.diff,len:cfg.len,players:[{id:'me',name:cfg.name,col:cfg.col},{id:'u',name:R.name,col:R.col,ai:'undercutter'}]};
   CMG.s=CMSim.newState(CMG.init);
   CMG.mems=CMG.s.order.filter(id=>CMG.s.players[id].ai).map((id,i)=>CMAI.newMem(id,CMG.s.players[id].ai,cfg.diff,seed+i+1));
   Object.assign(CMG,{log:[],queue:[],acc:0,lastFid:0,goal:null,hover:null,ctx:null,bell:0,on:true});
@@ -2339,7 +2363,7 @@ function gameFrame(dt,ts){
     CMG.acc+=dt;let n=0;
     while(CMG.acc>=CM_TUNE.DT&&n<5){gameStep();CMG.acc-=CM_TUNE.DT;n++;}
     if(n===5)CMG.acc=0;   // a long hitch: skip ahead rather than race to catch up
-    if(CM_TUNE.DAY-s.t<=30&&!CMG.bell){CMG.bell=1;toast('🔔 30 seconds\nuntil closing!',1800);bell();}
+    if(s.day-s.t<=warnAt(s)&&!CMG.bell){CMG.bell=1;toast(`🔔 ${Math.round(warnAt(s))} seconds\nuntil closing!`,1800);bell();}
   }
   animBean(P.bean,{an:P.an,em:P.em,emAt:P.emAt,hb:false},ts);
   for(const e of s.feed)if(e.id>CMG.lastFid){CMG.lastFid=e.id;onEvent(s,e);}

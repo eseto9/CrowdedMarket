@@ -13,8 +13,9 @@ at runtime, and there is no shared economy.
 
 ## Milestone 1: how a day plays
 
-A **5-minute** day in three parts of 100 s (morning, midday, evening), each busier than the
-last. You and **Ursula, the Undercutter** each run a stall on the top row. The bottom row and
+A day lasts **1, 2 or 3 minutes** (chosen on the title screen, 2 by default), in three equal
+parts (morning, midday, evening), each busier than the last. A closing warning comes with a
+fifth of the day left (30 s at most). You and **Ursula, the Undercutter** each run a stall on the top row. The bottom row and
 the far stalls are shut for now (more rivals arrive in later milestones).
 
 1. **Supply runs.** Six suppliers ring the market. Stand in a yellow ring (or click the
@@ -36,7 +37,9 @@ the far stalls are shut for now (more rivals arrive in later milestones).
    goods show on the counter and a price board floats above the stall.
 3. **Customers** walk the street from one end to the other with a bubble like `🧀 ≤12`: one
    thing and the most they'll pay. They stop briefly at any stall that has what they want.
-4. **Pitching.** Get within 3.2 m of a customer who is within 7 m of your stall and press
+4. **Pitching.** A ring in your colour on the ground round your stall shows your **sale range**:
+   customers inside it can be pitched, and bubbles outside it are faded. Get within 3.2 m of a
+   customer inside the ring (7 m from your till) and press
    **E** (or click them; you'll walk over first if needed). Other stalls get 1.6 s to pitch
    too. The customer takes the **cheapest pitch within budget**, with ties going to whoever
    pitched first, walks to that stall and pays the price agreed when they chose. If the
@@ -80,7 +83,7 @@ src/js/30-boot.js     main loop and boot
 JSON-serializable object:
 
 ```js
-{ v, seed, rng, tick, t, phase: 'day'|'closed', part, diff,
+{ v, seed, rng, tick, t, len, day, phase: 'day'|'closed', part, diff,
   players: { [id]: { id, name, col, ai, x, z, mt, coins, stall, carry: {good: n},
                      st: { sales, earned, spent, best, undercuts, sabotage, haggle, wasted } } },
   order: [ids],
@@ -135,7 +138,8 @@ The Undercutter:
   profit per second of the trip, from how many it can still sell before closing, and buys
   only that many.
 
-Difficulty (Easy/Normal/Hard on the title screen) sets how often it thinks, how fast it walks
+The AI plans for the length of the day it's in: nothing is bought that it can't sell before
+closing. Difficulty (Easy/Normal/Hard on the title screen) sets how often it thinks, how fast it walks
 (4.6 / 5.4 / 6 m/s against your 6), how quickly it notices customers and when it restocks.
 
 ## Look
@@ -175,6 +179,8 @@ log), `CMSim`, `CMAI`, `CMNav`, `P` (your bean) and `gameStep()`.
 
 ## Changelog
 
+- **2026-09-25:** days of 1, 2 or 3 minutes (was 5), with customers arriving more often; the
+  sale-range ring round your stall, and faded bubbles for customers out of reach.
 - **2026-09-25, milestone 1 (top-down):** the game moves out of Whereabouts into its own repo
   and becomes a one-screen board. Click-to-walk-and-act, a dash, touch controls, customers
   who stop to look at stalls, a 5-minute day, a demo market behind the title, and a phone layout.
