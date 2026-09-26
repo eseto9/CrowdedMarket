@@ -4,7 +4,7 @@
    and the rings that show what you're pointing at. It only
    reads the game state; nothing here changes it.
    ========================================================= */
-const WV={cust:new Map(),beans:new Map(),stalls:[],hover:null,target:null,me:null};
+const WV={cust:new Map(),beans:new Map(),stalls:[],wars:new Map(),hover:null,target:null,me:null};
 const CHAR_SCALE=1.3;   // beans and customers are drawn a little larger than life, so you can read them from up here
 
 /* ---------- stalls: goods on the counter, a name plate and a price board ---------- */
@@ -40,13 +40,14 @@ function custMesh(c){
   m.traverse(o=>{if(o.isMesh)o.userData.cust=c.id;});
   return {m,bub,face:m.rotation.y,walk:Math.random()*6};
 }
+// a request bubble: what they still want and the most they'll spend (a shopping list shows the lot, on blue)
 function custBubble(c){
-  const w=c.want[0],G=CM_TUNE.GOODS[w.item];
-  if(c.ph==='think')return [`🤔 ${G.icon}`,'think'];
-  if(c.ph==='go')return [`👍 ${G.icon}${c.deal.price}`,'happy'];
+  const icons=gs=>gs.map(g=>CM_TUNE.GOODS[g].icon).join('');
+  if(c.ph==='think')return [`🤔 ${icons(c.want)}`,'think'];
+  if(c.ph==='go')return [`👍 ${icons(c.deal.items)} ${c.deal.total}`,'happy'];
   if(c.ph==='buy')return ['🪙','happy'];
   if(c.ph==='leave')return c.happy?['😊','happy']:['😞','sad'];
-  return [`${G.icon} ≤${w.max}`,'bubble'];
+  return [`${icons(c.want)} ≤${c.budget}`,c.kind==='list'?'list':'bubble'];
 }
 function worldCustomers(s,dt){
   const seen=new Set();
@@ -124,10 +125,23 @@ function reachZone(s){
     fill.position.y=0.03;edge.position.y=0.035;g.userData={fill,edge};scene.add(g);WV.zone=g;
   }
   const pa=CMSim.payAt(s.stalls[me.stall]),z=WV.zone;
-  z.visible=true;z.position.set(pa.x,0,pa.z);
+  z.visible=true;z.position.set(pa.x,0,pa.z);z.scale.setScalar(CMSim.reachOf(me)/CM_TUNE.STALL_REACH);   // the bigger awning makes it bigger
   z.userData.fill.material.color.set(me.col);z.userData.edge.material.color.set(me.col);
 }
-const inReachOfMine=(s,c)=>{const me=s.players[CMG.me];if(!me)return true;const pa=CMSim.payAt(s.stalls[me.stall]);return Math.hypot(c.x-pa.x,c.z-pa.z)<=CM_TUNE.STALL_REACH;};
+const inReachOfMine=(s,c)=>{const me=s.players[CMG.me];if(!me)return true;const pa=CMSim.payAt(s.stalls[me.stall]);return Math.hypot(c.x-pa.x,c.z-pa.z)<=CMSim.reachOf(me);};
+
+/* ---------- price wars: a flame between the two stalls fighting over a good ---------- */
+function worldWars(s,ts){
+  const seen=new Set();
+  for(const [g,w] of Object.entries(s.wars)){
+    seen.add(g);let m=WV.wars.get(g);
+    if(!m){m=cmSprite(1.1);cmText(m,`🔥 Price war ${CM_TUNE.GOODS[g].icon}`,'war');scene.add(m);WV.wars.set(g,m);}
+    const a=s.players[w.a],b=s.players[w.b];if(!a||!b){m.visible=false;continue;}
+    const A=s.stalls[a.stall],B=s.stalls[b.stall];m.visible=true;
+    m.position.set((A.x+B.x)/2,5.1+0.15*Math.sin(ts*5),(A.z+B.z)/2);
+  }
+  for(const [g,m] of WV.wars)if(!seen.has(g)){scene.remove(m);WV.wars.delete(g);}
+}
 
 /* ---------- pointing: a ring under whatever the mouse is on, and one under what E would do ---------- */
 const HOVER_RING=(()=>{const m=new THREE.Mesh(new THREE.RingGeometry(0.62,0.82,32),new THREE.MeshBasicMaterial({color:0xFFFFFF,transparent:true,opacity:0.9,depthWrite:false}));
@@ -149,7 +163,7 @@ function ringAt(ring,s,t,scale,ts){
 }
 
 function worldSync(s,dt,ts){
-  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);
+  worldStalls(s);reachZone(s);worldCustomers(s,dt);worldRivals(s,dt,ts);worldWars(s,ts);
   if(P.bean){const me=s.players[CMG.me];fillCrate(WV.me.cr,me?me.carry:{});if(WV.me.cr.visible)holdPose(P.bean);}
   ringAt(HOVER_RING,s,CMG.hover,1,ts);
   ringAt(TARGET_RING,s,CMG.ctx&&CMG.ctx.thing,1,ts);
@@ -160,4 +174,5 @@ function worldClear(){
   for(const v of WV.beans.values())scene.remove(v.b);WV.beans.clear();
   for(const V of WV.stalls){V.owner=undefined;V.plate.visible=V.board.visible=false;for(const sl of V.slots){sl.n=-1;sl.g.clear();}}
   HOVER_RING.visible=TARGET_RING.visible=false;if(WV.zone)WV.zone.visible=false;
+  for(const m of WV.wars.values())scene.remove(m);WV.wars.clear();
 }

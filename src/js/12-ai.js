@@ -76,7 +76,7 @@ const CMNav=(()=>{
 const CMAI=(()=>{
   const T=CM_TUNE,A=T.AI,S=CMSim,GRID=()=>CMNav.boardGrid();
   function newMem(id,kind,diff,seed){
-    return {id,kind,diff:A.think[diff]?diff:'normal',rng:(seed>>>0)||1,next:0,path:null,task:'tend',item:null,sayAt:-99,seen:{}};
+    return {id,kind,diff:A.think[diff]?diff:'normal',rng:(seed>>>0)||1,next:0,path:null,task:'tend',item:null,sayAt:-99,seen:{},missed:{},lastSale:0};
   }
   function roll(m){let t=(m.rng=(m.rng+0x6D2B79F5)>>>0);t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;}
   const oneOf=(m,list)=>list[Math.floor(roll(m)*list.length)];
@@ -89,18 +89,23 @@ const CMAI=(()=>{
   function goTo(m,pos,x,z){m.path=CMNav.path(GRID(),pos.x,pos.z,x,z);}
   const shelfCount=st=>Object.values(st.stock).reduce((a,b)=>a+b,0);
 
-  // what's worth fetching: how many it can still sell before closing (customers so far
-  // this day part × how often people want it × its share of them), less what's on the shelf,
-  // for the profit per second of the round trip. Nothing, if no trip pays.
+  const speedOf=(m,p)=>Math.min(A.speed[m.diff],T.WALK)*S.speedOf(p);
+
+  // what's worth fetching: how many it can still sell before closing (customers this day part ×
+  // how often people want it × its share of them), less what's on the shelf, for the profit per
+  // second of the round trip. Nothing, if no trip pays. The Hoarder takes more than she needs.
   function chooseGood(s,m,pos){
-    const p=s.players[m.id],st=s.stalls[p.stall],R=T.RIVALS[m.kind],speed=A.speed[m.diff];
+    const p=s.players[m.id],st=s.stalls[p.stall],R=T.RIVALS[m.kind],speed=speedOf(m,p),cap=S.capOf(p);
     const W=Object.values(T.GOODS).reduce((a,g)=>a+g.weight,0),gap=T.SPAWN_GAP[s.part],rate=2/(gap[0]+gap[1]);
     let best=null;
     for(const [g,G] of Object.entries(T.GOODS)){
       const sp=s.sup[g],trip=(S.dist(pos.x,pos.z,sp.x,sp.z)+S.dist(sp.x,sp.z,st.x,st.z))/speed+2;
       const left=s.day-s.t-trip;if(left<6)continue;
-      const demand=left*rate*G.weight/W*A.share-(st.stock[g]||0);
-      const n=Math.min(T.CARRY,Math.floor(p.coins/G.cost),T.SHELF_MAX-(st.stock[g]||0),Math.ceil(demand));if(n<=0)continue;
+      const rivals=s.stalls.filter(o=>o!==st&&o.owner&&o.stock[g]>0).length;   // others selling it take their share
+      const asked=(m.missed[g]||0)*A.askedWorth;   // customers it's had to turn away lately
+      const demand=left*rate*G.weight/W*A.share/(1+rivals)+asked-(st.stock[g]||0);
+      const most=Math.min(cap,Math.floor(p.coins/G.cost),T.SHELF_MAX-(st.stock[g]||0));
+      const n=Math.min(most,Math.ceil(demand*(R.armful?1.6:1)));if(n<=0||demand<=0)continue;   // the Hoarder always takes extra
       const price=Math.max(G.cost+R.floorMargin,Math.round(G.list*R.startMult));
       const score=(Math.min(n,demand)*price-n*G.cost)/trip;
       if(score>0&&(!best||score>best.score))best={g,n,score};
@@ -121,43 +126,41 @@ const CMAI=(()=>{
     const price={...st.price};   // prices as they'll be once this tick's setPrice actions land
     const setPrice=(g,v)=>{if(v!==price[g]){const a={type:'setPrice',player:me,item:g,price:v};price[g]=v;out.push(a);return a;}return null;};
 
-    // pricing (only at the stall): the Undercutter goes just under anyone selling the same thing
+    // pricing (only at the stall): the Undercutter goes just under anyone selling the same thing;
+    // the Hoarder never undercuts, but matches the cheapest price going
     if(at)for(const g of Object.keys(T.GOODS)){
       if(!(st.stock[g]>0))continue;
-      const G=T.GOODS[g],floor=G.cost+R.floorMargin,open=Math.max(floor,Math.round(G.list*R.startMult));
+      const G=T.GOODS[g],floor=Math.max(G.cost+R.floorMargin,Math.round(G.list*(R.hold||0))),open=Math.max(floor,Math.round(G.list*R.startMult));
       let rival=Infinity;for(const o of s.stalls)if(o!==st&&o.owner&&(o.stock[g]||0)>0)rival=Math.min(rival,o.price[g]);
-      const want=Math.max(floor,rival<Infinity?Math.min(open,rival-R.undercutBy):open);
+      const want=Math.max(floor,rival<Infinity?Math.min(open,rival-(R.undercutBy||0)):open);
       const was=price[g],a=setPrice(g,want);
       if(a&&want<was&&rival<Infinity&&want<rival)a.say=say(s,m,'undercut');
     }
 
-    // customers worth pitching: near the stall, wanting something on the shelf at a price they'll pay
-    let hop=null,hopD=Infinity;
+    // customers in range who want something on the shelf. At the stall it sells by itself, so it only
+    // drops a price to someone's budget when that's still worth it; away from it, it pitches.
+    const reach=S.reachOf(p),pa=S.payAt(st);
     for(const c of s.cust){
       if(c.ph!=='walk'&&c.ph!=='browse'&&c.ph!=='think')continue;
-      const pa=S.payAt(st);if(S.dist(c.x,c.z,pa.x,pa.z)>T.STALL_REACH-0.5)continue;
-      const w=c.want[0];if(!(st.stock[w.item]>0))continue;
+      if(S.dist(c.x,c.z,pa.x,pa.z)>reach-0.3)continue;
+      if(m.seen[c.id]==null){m.seen[c.id]=s.t;   // a new face: note what they want that it hasn't got
+        for(const g of c.want)if(!(st.stock[g]>0))m.missed[g]=(m.missed[g]||0)+1;}
       if(c.pitched[me]!=null&&s.t-c.pitched[me]<T.REPITCH)continue;
-      if(m.seen[c.id]==null)m.seen[c.id]=s.t;
       if(s.t-m.seen[c.id]<A.pitchDelay[m.diff])continue;
-      const floor=T.GOODS[w.item].cost+R.floorMargin;
-      if(price[w.item]>w.max&&!(at&&w.max>=floor))continue;
-      const d=S.dist(pos.x,pos.z,c.x,c.z);
-      if(d<=T.PITCH_RANGE-0.2){
-        if(price[w.item]>w.max)setPrice(w.item,w.max);
-        out.push({type:'pitch',player:me,cust:c.id});
-      }else if(d<hopD){hop=c;hopD=d;}
+      const shelf={stock:st.stock,price};
+      if(!S.offer(s,c,shelf).ok&&at&&c.want.length===1){   // one thing, a little over their budget: meet it if it pays
+        const g=c.want[0];if(st.stock[g]>0&&c.budget>=T.GOODS[g].cost+R.floorMargin)setPrice(g,c.budget);
+      }
+      if(!at&&S.offer(s,c,shelf).ok&&S.dist(pos.x,pos.z,c.x,c.z)<=T.PITCH_RANGE-0.2)out.push({type:'pitch',player:me,cust:c.id});
     }
-    if(out.some(a=>a.type==='pitch'))return;
-    // step out towards one, stopping a couple of metres short (round anything in the way)
-    if(hop){const k=(hopD-2.2)/hopD;goTo(m,pos,pos.x+(hop.x-pos.x)*k,pos.z+(hop.z-pos.z)*k);return;}
 
     // restock when the shelf runs low and nobody is on the way to buy
     const busy=s.cust.some(c=>c.deal&&c.deal.p===me);
     const kinds=Object.values(st.stock).filter(n=>n>0).length;
-    if(!busy&&!S.carried(p)&&(shelfCount(st)<=A.restockAt[m.diff]||kinds<A.variety[m.diff])){
+    const stale=s.t-m.lastSale>=A.stale&&Object.values(m.missed).some(n=>n>=2);   // nothing selling, and people keep asking for other things
+    if(!busy&&!S.carried(p)&&(shelfCount(st)<=A.restockAt[m.diff]||kinds<A.variety[m.diff]||stale)){
       const pick=chooseGood(s,m,pos);
-      if(pick){m.task='fetch';m.item=pick.g;m.n=pick.n;const sp=s.sup[pick.g];goTo(m,pos,sp.x,sp.z);
+      if(pick){m.task='fetch';m.item=pick.g;m.n=pick.n;m.missed[pick.g]=0;m.lastSale=s.t;const sp=s.sup[pick.g];goTo(m,pos,sp.x,sp.z);
         const line=say(s,m,'restock',0.4);if(line)out.push({type:'say',player:me,text:line});return;}
     }
     if(S.dist(pos.x,pos.z,home.x,home.z)>0.6)goTo(m,pos,home.x,home.z);
@@ -167,9 +170,9 @@ const CMAI=(()=>{
   function step(s,m){
     const out=[];if(s.phase!=='day')return out;
     const p=s.players[m.id];if(!p)return out;
-    // walking: one move per tick along the path, never faster than a player runs
+    // walking: one move per tick along the path, never faster than a player walks
     if(m.path&&m.path.length){
-      let left=Math.min(A.speed[m.diff],T.WALK)*T.DT,x=p.x,z=p.z;
+      let left=speedOf(m,p)*T.DT,x=p.x,z=p.z;
       while(left>0&&m.path.length){
         const [tx,tz]=m.path[0],d=Math.hypot(tx-x,tz-z);
         if(d<=left){x=tx;z=tz;left-=d;m.path.shift();}
@@ -182,9 +185,20 @@ const CMAI=(()=>{
       const mv=out.length?out[0]:p;   // it plans from where this tick's step leaves it
       think(s,m,out,{x:mv.x,z:mv.z});
     }
-    // now and then a sale it just made gets a bubble
-    for(const e of s.feed)if(e.k==='sale'&&e.p===m.id&&e.t===s.t){const l=say(s,m,'sale',0.3);if(l)out.push({type:'say',player:m.id,text:l});}
+    // now and then something that just happened gets a bubble
+    for(const e of s.feed){if(e.t!==s.t)continue;
+      if(e.k==='sale'&&e.p===m.id)m.lastSale=s.t;
+      const l=e.k==='sale'&&e.p===m.id?say(s,m,'sale',0.3):e.k==='war'&&(e.a===m.id||e.b===m.id)?say(s,m,'war',1):null;
+      if(l)out.push({type:'say',player:m.id,text:l});}
     return out;
   }
-  return {newMem,step};
+  /** Between days: an upgrade, if it can spare the coins (it keeps some for stock). */
+  function betweenDays(s,m){
+    const p=s.players[m.id];if(!p||s.phase!=='closed'||s.week.n>=s.week.of)return [];
+    for(const k of T.RIVALS[m.kind].ups||[]){const U=T.UPGRADES[k];if(!p.ups[k]&&p.coins-U.cost>=A.keep)return [{type:'upgrade',player:m.id,kind:k}];}
+    return [];
+  }
+  /** A fresh day: forget yesterday's plans, keep its dice. */
+  function newDay(m){Object.assign(m,{next:0,path:null,task:'tend',item:null,sayAt:-99,seen:{},missed:{},lastSale:0});return m;}
+  return {newMem,step,betweenDays,newDay};
 })();

@@ -9,6 +9,7 @@ const CMG={on:false,s:null,init:null,me:'me',mems:[],log:[],queue:[],acc:0,lastF
   cfg:{name:'',col:BEAN_COLORS[5],diff:'normal',len:CM_TUNE.DAY_DEFAULT}};
 try{const c=JSON.parse(localStorage.getItem('cm.me')||'{}');if(typeof c.name==='string')CMG.cfg.name=clean(c.name);if(BEAN_COLORS.includes(c.col))CMG.cfg.col=c.col;if(CM_TUNE.AI.think[c.diff])CMG.cfg.diff=c.diff;if(CM_TUNE.DAYS[c.len])CMG.cfg.len=c.len;}catch(e){}
 function clean(s,n){return String(s==null?'':s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g,'').trim().slice(0,n||14);}
+const rivalCols=()=>Object.values(CM_TUNE.RIVALS).map(r=>r.col);   // colours the rivals wear, so yours can't clash
 // your bean
 const P={pos:new V3(),vel:new V3(),face:0,bean:null,dashT:0,dashCD:0,an:0,em:null,emAt:0};
 
@@ -17,7 +18,8 @@ const P={pos:new V3(),vel:new V3(),face:0,bean:null,dashT:0,dashCD:0,an:0,em:nul
 function titleRender(){
   $('#nameIn').value=CMG.cfg.name;
   const sw=$('#swatches');sw.textContent='';
-  for(const c of BEAN_COLORS){if(Object.values(CM_TUNE.RIVALS).some(r=>r.col===c))continue;   // the rivals' colours are taken
+  if(rivalCols().includes(CMG.cfg.col))CMG.cfg.col=BEAN_COLORS.find(c=>!rivalCols().includes(c));
+  for(const c of BEAN_COLORS){if(rivalCols().includes(c))continue;   // the rivals' colours are taken
     const b=document.createElement('button');b.type='button';b.className='sw';b.style.background=c;b.setAttribute('aria-label','Colour '+c);b.setAttribute('aria-pressed',c===CMG.cfg.col);
     b.onclick=()=>{CMG.cfg.col=c;titleRender();};sw.appendChild(b);}
   for(const b of $('#diffSeg').children)b.setAttribute('aria-pressed',b.dataset.diff===CMG.cfg.diff);
@@ -32,9 +34,10 @@ titleRender();
 
 // behind the title: two shopkeepers trading on their own, so the board is alive
 function demoStart(){
-  const R=CM_TUNE.RIVALS.undercutter;
-  const s=CMSim.newState({seed:1+Math.floor(Math.random()*1e9),players:[{id:'d1',name:R.name,col:R.col,ai:'undercutter'},{id:'d2',name:'Otto',col:'#4D96FF',ai:'undercutter'}]});
-  CMG.demo={s,mems:s.order.map((id,i)=>CMAI.newMem(id,'undercutter','normal',77+i)),acc:0};
+  const R=CM_TUNE.RIVALS;
+  const s=CMSim.newState({seed:1+Math.floor(Math.random()*1e9),players:[{id:'d0',name:'Otto',col:'#4D96FF',ai:'undercutter'},
+    {id:'d1',name:R.undercutter.name,col:R.undercutter.col,ai:'undercutter'},{id:'d2',name:R.hoarder.name,col:R.hoarder.col,ai:'hoarder'}]});
+  CMG.demo={s,mems:s.order.map((id,i)=>CMAI.newMem(id,s.players[id].ai,'normal',77+i)),acc:0};
 }
 function demoFrame(dt,ts){
   const D=CMG.demo;if(!D)return;
@@ -45,35 +48,50 @@ function demoFrame(dt,ts){
   worldSync(D.s,dt,ts);
 }
 
-/* ---------- a trading day ---------- */
+/* ---------- a trading week ---------- */
 function gameStart(){
   if(!$('#loading').hidden)return;   // the board isn't built yet
   audioInit();
   const cfg=CMG.cfg;cfg.name=clean($('#nameIn').value)||cfg.name||'Bean '+Math.floor(Math.random()*90+10);
+  if(rivalCols().includes(cfg.col))cfg.col=BEAN_COLORS.find(c=>!rivalCols().includes(c));
   try{localStorage.setItem('cm.me',JSON.stringify(cfg));}catch(e){}
   CMG.demo=null;worldClear();
-  const R=CM_TUNE.RIVALS.undercutter;
-  const seed=1+Math.floor(Math.random()*2147483646);
-  CMG.init={seed,diff:cfg.diff,len:cfg.len,players:[{id:'me',name:cfg.name,col:cfg.col},{id:'u',name:R.name,col:R.col,ai:'undercutter'}]};
+  const R=CM_TUNE.RIVALS,seed=1+Math.floor(Math.random()*2147483646);
+  CMG.init={seed,diff:cfg.diff,len:cfg.len,players:[{id:'me',name:cfg.name,col:cfg.col},
+    {id:'u',name:R.undercutter.name,col:R.undercutter.col,ai:'undercutter'},{id:'h',name:R.hoarder.name,col:R.hoarder.col,ai:'hoarder'}]};
   CMG.s=CMSim.newState(CMG.init);
   CMG.mems=CMG.s.order.filter(id=>CMG.s.players[id].ai).map((id,i)=>CMAI.newMem(id,CMG.s.players[id].ai,cfg.diff,seed+i+1));
-  Object.assign(CMG,{log:[],queue:[],acc:0,lastFid:0,goal:null,hover:null,ctx:null,bell:0,on:true});
-  const me=CMG.s.players.me;
-  WV.me=beanFor(me,DEFAULT_FIT,true);P.bean=WV.me.b;scene.add(P.bean);
-  P.pos.set(me.x,0,me.z);P.vel.set(0,0,0);P.face=CMG.s.stalls[me.stall].z<0?0:Math.PI;P.dashT=P.dashCD=0;
-  $('#title').hidden=true;$('#hud').hidden=false;hudReset();
-  feed('🌅 Morning! Your stall has your name over it.','big');
-  feed(`${R.name} (${R.title}) runs the stall next to yours.`,'rival');
-  feed('Fetch stock from the suppliers round the edge, shelve it, then pitch to customers.');
+  CMG.on=true;beginDay();
+  feed(`🌅 Day 1 of ${CMG.s.week.of}. Your stall has your name over it.`,'big');
+  feed(`${R.undercutter.name} (${R.undercutter.title}) is next door; ${R.hoarder.name} (${R.hoarder.title}) is across the street.`,'rival');
+  feed('Stand at your stall to sell to anyone in your ring. Fetch more stock round the edges. P sets your prices.');
   toast('🌅 Morning!\nThe market is open',2200);sfx.chime();
-  // the keys panel shows for the start of the day, then gets out of the way (H brings it back)
-  clearTimeout(HUD.keysT);if(!HUD.keysHidden)HUD.keysT=setTimeout(()=>{if(CMG.on)$('#keys').hidden=true;},25000);
+}
+// everything a morning needs: your bean at your stall, a clean HUD, a fresh log
+function beginDay(){
+  const s=CMG.s,me=s.players[CMG.me];
+  Object.assign(CMG,{log:[],queue:[],acc:0,lastFid:0,goal:null,hover:null,ctx:null,bell:0,start:CMSim.clone(s),
+    dayStart:Object.fromEntries(s.order.map(id=>[id,s.players[id].coins]))});
+  if(P.bean)scene.remove(P.bean);
+  WV.me=beanFor(me,DEFAULT_FIT,true);P.bean=WV.me.b;scene.add(P.bean);
+  P.pos.set(me.x,0,me.z);P.vel.set(0,0,0);P.face=s.stalls[me.stall].z<0?0:Math.PI;P.dashT=P.dashCD=0;
+  $('#title').hidden=true;$('#hud').hidden=false;hudReset();
+  // the keys panel shows for the start of the first day, then gets out of the way (H brings it back)
+  clearTimeout(HUD.keysT);if(!HUD.keysHidden&&s.week.n===1)HUD.keysT=setTimeout(()=>{if(CMG.on)$('#keys').hidden=true;},25000);
+  if(s.week.n>1)$('#keys').hidden=true;
+}
+function gameNextDay(){
+  const next=CMSim.nextDay(CMG.s);if(!next)return;
+  worldClear();CMG.s=next;CMG.mems.forEach(CMAI.newDay);beginDay();
+  const n=next.week.n,of=next.week.of;
+  feed(`☀️ Day ${n} of ${of}${n===of?': the last day!':''} Fresh stock on every stall.`,'big');
+  toast(`☀️ Day ${n} of ${of}${n===of?'\nLast day!':''}`,2000);sfx.chime();
 }
 function gameExit(again){
   CMG.on=false;CMG.s=null;CMG.goal=null;
   worldClear();
   if(P.bean){scene.remove(P.bean);P.bean=null;WV.me=null;}
-  $('#hud').hidden=true;$('#recap').hidden=true;
+  $('#hud').hidden=true;$('#recap').hidden=true;pricesOpen(false);
   if(!again){$('#title').hidden=false;titleRender();demoStart();}
 }
 $('#exitBtn').addEventListener('click',()=>{
@@ -116,7 +134,7 @@ function playerTick(dt){
   let dir=s.phase==='day'?keyDir():null;
   if(dir)CMG.goal=null;   // the keys take over from a click-to-walk
   else if(CMG.goal)dir=goalDir(s,dt);
-  const speed=P.dashT>0?T.DASH.speed:T.WALK;
+  const speed=(P.dashT>0?T.DASH.speed:T.WALK)*CMSim.speedOf(s.players[CMG.me]);   // quick boots make you faster
   if(P.dashT>0&&!dir)dir={x:Math.sin(P.face),z:Math.cos(P.face)};
   const tx=dir?dir.x*speed:0,tz=dir?dir.z*speed:0,k=damp(P.dashT>0?30:16,dt);
   P.vel.x=lerp(P.vel.x,tx,k);P.vel.z=lerp(P.vel.z,tz,k);
@@ -167,28 +185,30 @@ function nearestCustomer(s){
   }
   return best;
 }
+// what a customer would buy from you, in words
 function custLine(s,c){
-  const T=CM_TUNE,st=s.stalls[s.players[CMG.me].stall],w=c.want[0],G=T.GOODS[w.item],have=st.stock[w.item]||0,price=st.price[w.item];
-  const pa=CMSim.payAt(st);
-  if(Math.hypot(c.x-pa.x,c.z-pa.z)>T.STALL_REACH)return {text:`Wants ${G.icon} (up to ${w.max}), but they’re too far from your stall`,tone:'bad',ok:false};
-  if(!have)return {text:`Wants ${G.icon} ${G.name} (up to ${w.max}). You have none!`,tone:'bad',ok:false};
-  if(price>w.max)return {text:`Wants ${G.icon} up to ${w.max}. Yours is ${price}: too pricey`,tone:'bad',ok:true};
-  return {text:`Pitch ${G.icon} for 🪙${price}`,sub:`they’ll pay up to ${w.max}`,tone:'good',ok:true};
+  const me=s.players[CMG.me],st=s.stalls[me.stall],pa=CMSim.payAt(st),want=`${icons(c.want)} for up to ${c.budget}`;
+  if(Math.hypot(c.x-pa.x,c.z-pa.z)>CMSim.reachOf(me))return {text:`Wants ${want}, but they’re outside your ring`,tone:'bad',ok:false};
+  const o=CMSim.offer(s,c,st);
+  if(!o.ok&&o.reason==='nostock')return {text:`Wants ${want}. You have none of it!`,tone:'bad',ok:false};
+  if(!o.ok)return {text:`Wants ${want}. Too pricey: lower a price (P)`,tone:'bad',ok:true};
+  const bonus=c.kind==='list'&&o.full?` + a ${Math.round(CM_TUNE.LIST.bonus*100)}% list bonus`:'';
+  return {text:`Pitch ${icons(o.items)} for 🪙${o.total}${bonus}`,sub:c.kind==='list'&&!o.full?`they also want ${icons(c.want.filter(g=>!o.items.includes(g)))}`:`budget ${c.budget}`,tone:'good',ok:true};
 }
 function context(s){
   const T=CM_TUNE,me=s.players[CMG.me],mine=me.stall,st=s.stalls[mine],held=CMSim.carried(me),px=P.pos.x,pz=P.pos.z;
   for(const [g,sp] of Object.entries(s.sup)){
     if(Math.hypot(px-sp.x,pz-sp.z)>T.SUPPLIER_RANGE)continue;
     const G=T.GOODS[g],thing={kind:'sup',g};
-    if(held>=T.CARRY)return {thing,text:'Your arms are full. Take it to your stall!',tone:'bad'};
+    if(held>=CMSim.capOf(me))return {thing,text:'Your arms are full. Take it to your stall!',tone:'bad'};
     if(me.coins<G.cost)return {thing,text:`${G.icon} costs ${G.cost}. You only have ${me.coins} 🪙`,tone:'bad'};
-    return {thing,act:'buy',key:'E',text:`Buy ${G.icon} ${G.name} · 🪙${G.cost} each`,sub:`${held}/${T.CARRY} carried · Shift+E: an armful`};
+    return {thing,act:'buy',key:'E',text:`Buy ${G.icon} ${G.name} · 🪙${G.cost} each`,sub:`${held}/${CMSim.capOf(me)} carried · Shift+E: an armful`};
   }
   const at=CMSim.atStall({x:px,z:pz},st);
   if(at&&held)return {thing:{kind:'stall',i:mine},act:'shelve',key:'E',text:`Put ${held} thing${held>1?'s':''} on your shelf`,tone:'good'};
   const c=nearestCustomer(s);
   if(c){const l=custLine(s,c);return Object.assign({thing:{kind:'cust',id:c.id},act:l.ok?'pitch':null,key:l.ok?'E':null},l);}
-  if(at)return {thing:{kind:'stall',i:mine},text:'Your stall. Fetch stock round the edges, then pitch to passing customers.'};
+  if(at)return {thing:{kind:'stall',i:mine},act:'prices',key:'P',text:'At your stall: you sell to anyone in your ring',sub:'P or click: prices'};
   return null;
 }
 // what the pointer is on: a customer, a supplier, a stall, or just the ground
@@ -208,23 +228,25 @@ function hoverLine(s,h){
   if(h.kind==='stall'){const st=s.stalls[h.i],p=s.players[st.owner];
     if(!p)return {text:'An empty stall'};
     if(p.id!==CMG.me)return {text:`${p.name}’s stall`};
-    return {text:CMSim.carried(s.players[CMG.me])?'Click: go and shelve what you’re carrying':'Click: back to your stall'};}
+    return {text:CMSim.carried(s.players[CMG.me])?'Click: go and shelve what you’re carrying':CMSim.atStall(P.pos,st)?'Click: set your prices':'Click: back to your stall'};}
   if(h.kind==='cust'){const c=s.cust.find(c=>c.id===h.id);if(!c)return null;const l=custLine(s,c);return {text:(l.ok?'Click to pitch · ':'')+l.text,tone:l.tone};}
   return null;
 }
 function doThing(s,t,all){
   const T=CM_TUNE;
-  if(t.kind==='sup')cmAct({type:'buy',item:t.g,n:all?T.CARRY:1},()=>sfx.pop());
+  if(t.kind==='sup')cmAct({type:'buy',item:t.g,n:all?CMSim.capOf(s.players[CMG.me]):1},()=>sfx.pop());
   else if(t.kind==='stall'){
     if(t.i!==s.players[CMG.me].stall){const p=s.players[s.stalls[t.i].owner];toast(p?`That’s ${p.name}’s stall`:'An empty stall',1100);return;}
     if(CMSim.carried(s.players[CMG.me]))cmAct({type:'shelve'},()=>{sfx.blip();burst(new V3(s.stalls[t.i].x,1.4,s.stalls[t.i].z),10);});
+    else pricesOpen(true);   // nothing to shelve: your prices
   }
   else if(t.kind==='cust')cmAct({type:'pitch',cust:t.id},()=>{sfx.tick();P.em='point';P.emAt=Date.now();});
 }
 function gameAct(all){
   const s=CMG.s;if(!s||s.phase!=='day')return;
   const ctx=CMG.ctx;if(!ctx)return;
-  if(ctx.act)doThing(s,ctx.thing,all);
+  if(ctx.act==='prices')pricesOpen();
+  else if(ctx.act)doThing(s,ctx.thing,all);
   else if(ctx.text&&ctx.tone==='bad'){toast(ctx.text.split('. ')[0],1300);sfx.thud();}
 }
 function gameClick(nx,ny,shift){
@@ -240,6 +262,8 @@ function gameKey(e){
   if(e.code==='KeyE'){gameAct(e.shiftKey);return;}
   if(e.code==='Space'){gameDash();return;}
   if(e.code==='Tab'){$('#tab').hidden=false;if(CMG.s)tabRender(CMG.s);return;}
+  if(e.code==='KeyP'){pricesOpen();return;}
+  if(e.code==='Escape'){pricesOpen(false);return;}
   if(e.code==='KeyH'){HUD.keysHidden=!HUD.keysHidden;$('#keys').hidden=HUD.keysHidden;try{localStorage.setItem('cm.keys',HUD.keysHidden?'0':'1');}catch(err){}return;}
   if(e.code==='KeyM'){toggleMute();return;}
   if(/^Digit[1-5]$/.test(e.code)){P.em=['wave','point','dance','shrug','cheer'][+e.code.slice(5)-1];P.emAt=Date.now();}
@@ -252,25 +276,34 @@ function onEvent(s,e){
   switch(e.k){
     case 'sale':{
       const st=s.stalls[s.players[e.p].stall];
-      if(mine){sfx.coin();burst(new V3(st.x,1.6,st.z),16);feed(`🪙 Sold ${icon(e.item)} for ${e.price}`,'me');}
-      else feed(`${who(e.p)} sold ${icon(e.item)} for ${e.price}`,'rival');
+      const bonus=e.bonus?` (+${e.bonus} list bonus!)`:'';
+      if(mine){sfx.coin();burst(new V3(st.x,1.6,st.z),e.bonus?40:16);feed(`🪙 Sold ${icons(e.items)} for ${e.price}${bonus}`,'me');if(e.bonus)toast(`List complete!\n+${e.bonus} bonus`,1400);}
+      else feed(`${who(e.p)} sold ${icons(e.items)} for ${e.price}${bonus}`,'rival');
       break;
     }
     case 'undercut':feed(mine?`You dropped ${icon(e.item)} to ${e.price}`:`${who(e.p)} dropped ${icon(e.item)} to ${e.price}`,cls);if(!mine)sfx.tick();break;
     case 'price':if(mine)feed(`${icon(e.item)} is now ${e.price}`,'me');break;
     case 'buy':feed(mine?`Bought ${icon(e.item)}×${e.n} for 🪙${e.cost}`:`${who(e.p)} stocked up on ${icon(e.item)}`,cls);break;
     case 'shelve':if(mine)feed(`Shelved ${e.n} thing${e.n>1?'s':''}`,'me');break;
-    case 'pricey':if(mine){const c=s.cust.find(c=>c.id===e.cust);toast(c?`Too pricey!\nThey’ll pay up to ${c.want[0].max}`:'Too pricey!',1500);sfx.thud();}break;
+    case 'pricey':if(mine){const c=s.cust.find(c=>c.id===e.cust);toast(c?`Too pricey!\nThey’ll spend up to ${c.budget}`:'Too pricey!',1500);sfx.thud();}break;
     case 'chose':{
       const c=s.cust.find(c=>c.id===e.cust);
-      if(mine){toast(`They’ll take it!\n${icon(e.item)} for ${e.price}`,1300);sfx.hint();}
-      else if(c&&c.pitched[CMG.me]!=null){feed(`Lost a customer to ${who(e.p)} (${icon(e.item)} ${e.price})`,'rival');sfx.sad();}
+      if(mine){toast(`They’ll take it!\n${icons(e.items)} for ${e.price}`,1300);sfx.hint();}
+      else if(c&&c.pitched[CMG.me]!=null){feed(`Lost a customer to ${who(e.p)} (${icons(e.items)} ${e.price})`,'rival');sfx.sad();}
       break;
     }
     case 'soldout':if(mine){toast('Sold out before they got there!',1500);sfx.thud();}break;
     case 'part':{const p=T.PARTS.find(p=>p.k===e.part);toast(`${p.icon} ${p.label}`,1800);feed(`${p.icon} ${p.label}: busier now!`,'big');bell();break;}
     case 'say':beanSay(e.p,e.text);feed(`${who(e.p)}: “${e.text}”`,'rival say');break;
-    case 'close':bell();sfx.fanfare();feed('🔔 Closing time!','big');burst(new V3(P.pos.x,2,P.pos.z),60);recapShow(s);break;
+    case 'war':{const inIt=[e.a,e.b].includes(CMG.me);toast(`🔥 Price war on ${icon(e.item)}!`,1600);sfx.zoom();
+      feed(`🔥 Price war on ${icon(e.item)}: ${who(e.a)} vs ${who(e.b)}. More customers want it, margins get thin.`,inIt?'me':'rival');break;}
+    case 'peace':feed(`The ${icon(e.item)} price war cools off.`,'rival');break;
+    case 'close':{
+      bell();sfx.fanfare();feed('🔔 Closing time!','big');burst(new V3(P.pos.x,2,P.pos.z),60);pricesOpen(false);
+      // the rivals shop for tomorrow straight away, so you can see what they bought
+      for(const m of CMG.mems)for(const a of CMAI.betweenDays(s,m)){CMG.log.push([s.tick,a]);CMSim.applyAction(s,a);}
+      recapShow(s);break;
+    }
   }
 }
 function bell(){[1568,1175,1568,1175].forEach((f,i)=>tone(f,0.9,'sine',0.12,i*0.28));}

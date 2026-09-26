@@ -16,9 +16,11 @@ const CM_TUNE={
   ],
   CLOSING_WARN:0.2,          // "closing soon!" when this much of the day is left (30 s at most)
 
-  START_COINS:30,
-  START_STOCK:{bread:3,fruit:3},   // every stall opens with this on the shelf
-  CARRY:6,                   // units a bean can carry at once
+  WEEK:3,                    // days in a market week; coins carry over from day to day
+  START_COINS:30,            // on the first day
+  // every stall opens each day with the same random mix: this many kinds, this many of each, from this pool
+  START_MIX:{kinds:[2,3],each:[2,3],pool:['bread','fruit','fish','flowers','cheese']},
+  CARRY:6,                   // units a bean can carry at once (before upgrades)
   SHELF_MAX:20,              // units of one good a stall can hold
   PRICE_MAX:60,
 
@@ -58,6 +60,13 @@ const CM_TUNE={
     fish:   {x:0,   z:10.2, prop:[1.1,2.7,10.3,11.5],     name:'the fish quay'},
   },
 
+  // upgrades, bought between days (once each)
+  UPGRADES:{
+    crate: {icon:'🧺',name:'Bigger crate', desc:'Carry 9 things instead of 6',cost:20,carry:3},
+    boots: {icon:'👟',name:'Quick boots',  desc:'Walk 15% faster',            cost:25,speed:1.15},
+    awning:{icon:'⛱️',name:'Bigger awning',desc:'Your sale range grows by 2 m',cost:20,reach:2},
+  },
+
   // ranges
   SUPPLIER_RANGE:2.2,        // stand this close to a supplier to buy
   STALL_RANGE:2.6,           // ...to your stall (or its post) to shelve or set prices
@@ -70,7 +79,13 @@ const CM_TUNE={
   MOVE_SLACK:1.25,           // allowance for frame jitter when checking a move
   BEAN_R:0.42,               // how wide a bean is, for bumping into things
 
-  // customers
+  // customers: what kinds turn up in each part of the day
+  CUST_MIX:{morning:{budget:1},midday:{budget:0.6,list:0.4},evening:{budget:0.7,list:0.3}},
+  // shopping lists: 2-3 different things and a total budget; the stall that fills the whole list gets a bonus on top
+  LIST:{items:[2,3],mult:[1.05,1.35],bonus:0.25},
+  // price wars: two stalls undercutting each other on the same good within WINDOW seconds.
+  // It lasts LAST seconds after the latest undercut, and customers wanting that good turn up DRAW× as often.
+  WAR:{window:25,last:20,draw:1.8},
   STREET:{x0:-26,x1:26,lane:2.1},   // they walk the street from one end to the other
   CUST_SPEED:1.5,
   CUST_GO_SPEED:2.6,         // walking over to the stall they chose
@@ -95,13 +110,23 @@ const CM_TUNE={
     variety:{easy:1,normal:2,hard:3},            // ...or has fewer kinds of goods than this
     share:0.5,                                    // the part of the customers it expects to win
     sayGap:10,                                    // at most one speech bubble this often
+    keep:15,                                      // coins it keeps for stock when buying upgrades
+    stale:12,                                     // no sale for this long: go and fetch what people keep asking for
+    askedWorth:0.5,                               // how much each turned-away customer counts when choosing what to fetch
   },
   RIVALS:{
     undercutter:{name:'Ursula',title:'The Undercutter',col:'#FF5D73',
       fit:{t:'hawaii',tc:0,tp:'solid',b:'skirt',bc:4,bp:'dots',s:'sneakers',sc:0,x:'shades',r:'board'},
       startMult:0.85,        // opens every price at list × this
       undercutBy:1,          // beats a rival's price by this much
-      floorMargin:1,         // never prices within this of cost
-      says:{undercut:['Half price!','Cheaper here!','Beat that!','Bargains!'],sale:['Pleasure doing business!','Come again!'],restock:['Back in a jiffy!','More stock, coming up!']}},
+      floorMargin:2,         // never prices closer to cost than this
+      ups:['boots','awning','crate'],   // upgrades it buys between days, in this order
+      says:{undercut:['Half price!','Cheaper here!','Beat that!','Bargains!'],sale:['Pleasure doing business!','Come again!'],restock:['Back in a jiffy!','More stock, coming up!'],war:['You want a price war?','Bring it on!']}},
+    // for now a plain shopkeeper: never undercuts (but matches), fetches full armfuls (her tricks come with auctions and bulk orders)
+    hoarder:{name:'Hattie',title:'The Hoarder',col:'#9B5DE5',
+      fit:{t:'puffer',tc:3,tp:'solid',b:'overalls',bc:6,bp:'solid',s:'boots',sc:1,x:'backpack',r:'board'},
+      startMult:0.95,undercutBy:0,floorMargin:1,hold:0.8,armful:true,   // hold: never below this share of list
+      ups:['crate','awning','boots'],
+      says:{sale:['Lovely!','One less on the pile.'],restock:['Stocking up!','Mine, all mine!','You can never have too many.']}},
   },
 };

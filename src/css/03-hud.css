@@ -40,7 +40,7 @@
 #feed .rival{color:var(--muted)}
 #feed .say{font-style:italic}
 #feed .big{font-family:var(--display);font-weight:400;font-size:15px;color:var(--text)}
-#keys{position:absolute;right:12px;top:calc(96px + env(safe-area-inset-top,0px));width:200px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:center;font-weight:800;font-size:12px}
+#keys{position:absolute;right:12px;top:calc(128px + env(safe-area-inset-top,0px));width:200px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:center;font-weight:800;font-size:12px}
 #keys kbd{justify-self:start}
 #tab{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:16px 20px;width:min(560px,calc(100% - 24px));max-height:80vh;overflow:auto;font-weight:800;font-size:14px}
 #tab table{width:100%;border-collapse:collapse;margin-bottom:10px}
@@ -103,4 +103,44 @@
   #touchBtns{top:50%;bottom:auto;transform:translateY(-50%);gap:6px;right:8px}   /* the street's end: nothing to cover there */
   #touchBtns button{font-size:13px;padding:7px 10px;border-width:2px;box-shadow:2px 2px 0 var(--ink)}
   #toast{font-size:24px;top:38%}
+}
+
+/* ---------- the price panel: big buttons, fine for thumbs ---------- */
+#prices{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(560px,calc(100% - 24px));padding:10px 14px 12px;font-weight:800;font-size:14px;z-index:2}
+.prHead{display:flex;align-items:center;justify-content:space-between}
+.prHead h3{margin:0;font-family:var(--display);font-weight:400;font-size:20px}
+.prClose{border:2px solid var(--ink);border-radius:10px;background:var(--paper);color:var(--text);font-weight:900;width:32px;height:32px}
+.prNote{margin:2px 0 8px;color:var(--muted);font-size:13px}
+#prices.away .prNote{color:var(--coral)}
+.prList{display:flex;flex-direction:column;gap:4px}
+.prRow{display:grid;grid-template-columns:1fr 34px 40px 58px 40px 58px;grid-template-rows:auto auto;gap:0 6px;align-items:center;padding:4px 6px;border-radius:12px}
+.prRow.empty{opacity:.55}
+.prRow.war{background:rgba(255,111,97,.16)}
+.prName{font-weight:900}
+.prN{color:var(--muted);text-align:right}
+.prVal{font-family:var(--display);font-weight:400;font-size:20px;text-align:center}
+.prBtn,.prBeat{border:2px solid var(--ink);border-radius:10px;background:var(--sun);color:#2B2040;font-weight:900;height:34px;font-size:18px;box-shadow:2px 2px 0 var(--ink)}
+.prBeat{background:var(--coral);color:#fff;font-size:13px}
+.prBtn:disabled,.prBeat:disabled{opacity:.35;box-shadow:none;cursor:default}
+.prInfo{grid-column:1/-1;font-size:11px;color:var(--muted);margin-top:1px}
+#tab .wars{margin:0 0 8px;font-weight:900;color:var(--coral)}
+.reqs span.list{background:#E4F1FF}
+
+/* ---------- between days: the upgrade shop ---------- */
+.shop h3{font-family:var(--display);font-weight:400;font-size:20px;margin:6px 0 8px;text-align:center}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.card{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;border:3px solid var(--ink);border-radius:14px;padding:10px 8px;background:var(--paper)}
+.card.owned{background:#DDF8EA;color:#2B2040}
+.card .ic{font-size:30px;line-height:1}
+.card b{font-family:var(--display);font-weight:400;font-size:17px}
+.card .desc{font-size:12px;font-weight:800;color:var(--muted)}
+.card .who{font-size:11px;font-weight:900;color:var(--coral)}
+.card .btn{margin-top:4px;padding:.35em .8em;font-size:14px}
+.shop .note{text-align:center;font-size:12px;font-weight:800;color:var(--muted);margin:8px 0 12px}
+@media (max-width:560px){.cards{grid-template-columns:1fr}}
+@media (max-height:500px){
+  #prices{bottom:calc(40px + env(safe-area-inset-bottom,0px));padding:6px 10px;max-height:calc(100% - 90px);overflow:auto}
+  .prRow{grid-template-rows:auto;grid-template-columns:1fr 30px 36px 50px 36px 50px}.prInfo{display:none}
+  .prBtn,.prBeat{height:30px}
+  #recap .panel{padding:12px 14px}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:6px}.card .desc{display:none}
 }

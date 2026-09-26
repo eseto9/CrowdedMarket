@@ -47,3 +47,4 @@ if(window.matchMedia&&matchMedia('(pointer:coarse)').matches){IN.touch=true;docu
 $('#tDash').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();gameDash();});
 $('#tAct').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();gameAct(false);});
 $('#tAll').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();gameAct(true);});
+$('#tPrices').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();pricesOpen();});

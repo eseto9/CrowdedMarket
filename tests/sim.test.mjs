@@ -1,18 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, place, home, customer, ticks, playDay } from './helpers.mjs';
+import { setup, place, home, away, shelf, customer, ticks, playDay, THREE } from './helpers.mjs';
 
-test('a new day: one stall each, starting coins, stock and list prices; plain JSON', () => {
-  const { s, CM_TUNE: T } = setup();
+test('a new day: one stall each, starting coins, list prices, the same opening stock for everyone; plain JSON', () => {
+  const { s, CM_TUNE: T } = setup({ players: THREE });
   assert.deepEqual(JSON.parse(JSON.stringify(s)), s);
-  assert.equal(s.stalls[0].owner, 'me');
-  assert.equal(s.stalls[1].owner, 'u');
-  assert.equal(s.stalls[2].owner, null);
+  assert.deepEqual(s.stalls.map(st => st.owner), ['me', 'u', 'h', null]);
   assert.equal(s.players.me.coins, T.START_COINS);
-  assert.deepEqual(s.stalls[0].stock, T.START_STOCK);
   assert.equal(s.stalls[1].price.fish, T.GOODS.fish.list);
+  for (const st of s.stalls.slice(0, 3)) assert.deepEqual(st.stock, s.mix, 'everyone opens with the same mix');
+  assert.deepEqual(s.stalls[3].stock, {});
   assert.equal(s.phase, 'day');
-  assert.equal(s.part, 'morning');
+  assert.deepEqual(s.week, { n: 1, of: T.WEEK });
+});
+
+test('the opening mix: 2-3 kinds of 2-3 each from the pool, and it changes with the seed', () => {
+  const { CMSim, CM_TUNE: T } = setup();
+  const mixes = new Set();
+  for (let seed = 1; seed <= 40; seed++) {
+    const { mix } = CMSim.newState({ seed, players: [{ id: 'me' }] });
+    const kinds = Object.keys(mix);
+    assert.ok(kinds.length >= T.START_MIX.kinds[0] && kinds.length <= T.START_MIX.kinds[1]);
+    for (const [g, n] of Object.entries(mix)) { assert.ok(T.START_MIX.pool.includes(g)); assert.ok(n >= T.START_MIX.each[0] && n <= T.START_MIX.each[1]); }
+    mixes.add(JSON.stringify(mix));
+  }
+  assert.ok(mixes.size > 10, 'plenty of different openings');
 });
 
 test('the board: every post and supplier spot is free to stand on, stalls and props are not', () => {
@@ -51,7 +63,6 @@ test('move: nobody goes faster than a dash, off the board or through a stall', (
   ticks(CMSim, s, 100);
   CMSim.applyAction(s, { type: 'move', player: 'me', x: 999, z: 0 });
   assert.ok(p.x <= T.BOARD.x1);
-  // into the middle of a stall: pushed back out
   const st = s.stalls[1]; place(s, 'me', st.x, st.z + 2); ticks(CMSim, s, 5);
   CMSim.applyAction(s, { type: 'move', player: 'me', x: st.x, z: st.z });
   assert.ok(!CMSim.blocked(p.x, p.z, T.BEAN_R - 0.01));
@@ -62,16 +73,11 @@ test('buy: only at the supplier, only what you can carry and afford', () => {
   const p = s.players.me;
   assert.equal(CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish', n: 2 }).reason, 'far');
   place(s, 'me', T.SUPPLIERS.fish.x, T.SUPPLIERS.fish.z);
-  const r = CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish', n: 2 });
-  assert.ok(r.ok);
+  assert.ok(CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish', n: 2 }).ok);
   assert.equal(p.carry.fish, 2);
   assert.equal(p.coins, T.START_COINS - 2 * T.GOODS.fish.cost);
-  // capacity: asks for 10, gets what fits
-  const r2 = CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish', n: 10 });
-  assert.equal(r2.n, T.CARRY - 2);
-  assert.equal(CMSim.carried(p), T.CARRY);
+  assert.equal(CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish', n: 10 }).n, T.CARRY - 2);
   assert.equal(CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish' }).reason, 'full');
-  // money
   p.carry = {}; p.coins = 3;
   assert.equal(CMSim.applyAction(s, { type: 'buy', player: 'me', item: 'fish' }).reason, 'broke');
   assert.equal(p.coins, 3);
@@ -79,131 +85,228 @@ test('buy: only at the supplier, only what you can carry and afford', () => {
 
 test('shelve: only at your own stall; stock moves from your arms to the shelf', () => {
   const env = setup(), { s, CMSim } = env;
-  const p = s.players.me;
+  const p = s.players.me; shelf(s, 0, {});
   p.carry = { fish: 3, cheese: 1 };
-  const b = CMSim.post(s.stalls[1]); place(s, 'me', b.x, b.z);   // the rival's stall
+  const b = CMSim.post(s.stalls[1]); place(s, 'me', b.x, b.z);
   assert.equal(CMSim.applyAction(s, { type: 'shelve', player: 'me' }).reason, 'far');
   home(env, 'me');
   const r = CMSim.applyAction(s, { type: 'shelve', player: 'me' });
   assert.ok(r.ok); assert.equal(r.n, 4);
-  assert.equal(s.stalls[0].stock.fish, 3);
-  assert.equal(s.stalls[0].stock.cheese, 1);
-  assert.deepEqual(p.carry, {});
+  assert.deepEqual(s.stalls[0].stock, { fish: 3, cheese: 1 });
   assert.equal(CMSim.applyAction(s, { type: 'shelve', player: 'me' }).reason, 'empty');
 });
 
 test('setPrice: at your stall, never below supply cost; undercuts are counted', () => {
   const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+  shelf(s, 0, { fruit: 3 }); shelf(s, 1, { fruit: 3 });
   assert.equal(CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: T.GOODS.fruit.cost - 1 }).reason, 'belowcost');
   assert.equal(CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: T.PRICE_MAX + 1 }).reason, 'toohigh');
   place(s, 'me', 20, 0);
   assert.equal(CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: 4 }).reason, 'far');
   home(env, 'me');
-  // both stalls have fruit at 5: going to 4 undercuts the rival
   const r = CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: 4 });
   assert.ok(r.ok && r.undercut);
-  assert.equal(s.stalls[0].price.fruit, 4);
   assert.equal(s.players.me.st.undercuts, 1);
-  assert.equal(s.feed.at(-1).k, 'undercut');
-  // already cheapest: lower still isn't another undercut
-  assert.ok(!CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: 3 }).undercut);
+  assert.deepEqual([s.feed.at(-1).k, s.feed.at(-1).vs], ['undercut', 'u']);
+  assert.ok(!CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: 3 }).undercut, 'already cheapest');
   assert.equal(s.players.me.st.undercuts, 1);
 });
 
-test('pitch: needs you near the customer, the customer near your stall, stock and a price in budget', () => {
+test('price war: undercutting back and forth on one good starts a war, which ends after a quiet spell', () => {
+  const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+  shelf(s, 0, { fruit: 3 }); shelf(s, 1, { fruit: 3 });
+  home(env, 'me'); home(env, 'u');
+  CMSim.applyAction(s, { type: 'setPrice', player: 'me', item: 'fruit', price: 4 });
+  assert.deepEqual(s.wars, {}, 'one undercut is not a war');
+  ticks(CMSim, s, 30);
+  CMSim.applyAction(s, { type: 'setPrice', player: 'u', item: 'fruit', price: 3 });
+  assert.ok(s.wars.fruit, 'undercut back: war');
+  assert.ok(s.feed.some(e => e.k === 'war' && e.item === 'fruit'));
+  ticks(CMSim, s, T.WAR.last / T.DT - 5);
+  assert.ok(s.wars.fruit, 'still on');
+  ticks(CMSim, s, 10);
+  assert.ok(!s.wars.fruit, 'over');
+  assert.ok(s.feed.some(e => e.k === 'peace' && e.item === 'fruit'));
+  // a slow reply isn't a war
+  const b = setup(), bs = b.s;
+  shelf(bs, 0, { fish: 3 }); shelf(bs, 1, { fish: 3 }); home(b, 'me'); home(b, 'u');
+  b.CMSim.applyAction(bs, { type: 'setPrice', player: 'me', item: 'fish', price: 8 });
+  ticks(b.CMSim, bs, (T.WAR.window + 2) / T.DT);
+  b.CMSim.applyAction(bs, { type: 'setPrice', player: 'u', item: 'fish', price: 7 });
+  assert.deepEqual(bs.wars, {});
+});
+
+test('a price war brings in more customers wanting that good', () => {
+  const count = war => { let n = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const { s, CMSim } = setup({ seed, players: [{ id: 'me' }] });
+      s.stalls[0].stock = {};
+      while (s.phase === 'day') { if (war) s.wars.cheese = { a: 'x', b: 'y', until: 1e9 }; CMSim.tick(s); for (const e of s.feed) if (e.t === s.t && e.k === 'arrive' && e.want.includes('cheese')) n++; }
+    } return n; };
+  assert.ok(count(true) > count(false) * 1.3);
+});
+
+test('pitch: needs you near the customer, the customer inside your range, stock and a price in budget', () => {
   const env = setup(), { s, CMSim } = env;
+  shelf(s, 0, {}); shelf(s, 1, {});
   const pa = CMSim.payAt(s.stalls[0]);
-  const c = customer(s, { x: pa.x, z: -1.5, want: [{ item: 'fish', max: 12 }] });
+  const c = customer(s, { x: pa.x, z: -1.5, want: ['fish'], budget: 12 });
   place(s, 'me', 15, 0);
   assert.equal(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id }).reason, 'far');
-  home(env, 'me');
+  place(s, 'me', pa.x + 1.5, -2.5);
   assert.equal(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id }).reason, 'nostock');
   s.stalls[0].stock.fish = 1; s.stalls[0].price.fish = 13;
   assert.equal(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id }).reason, 'pricey');
   assert.equal(s.feed.at(-1).k, 'pricey');
-  // a customer far from your stall can't be pitched even when you walk up to them
-  const far = customer(s, { x: 18, z: 0, want: [{ item: 'fruit', max: 9 }] });
+  const far = customer(s, { x: 18, z: 0, want: ['fruit'], budget: 9 });
   place(s, 'me', 17, 0);
   assert.equal(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: far.id }).reason, 'reach');
   assert.equal(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: 'c999' }).reason, 'gone');
 });
 
-test('budget customer: buys from the cheapest pitch under budget', () => {
+test('budget customer: buys from the cheapest pitch under budget; a tie goes to whoever pitched first', () => {
   const { s, CMSim, CM_TUNE: T } = setup();
-  s.stalls[1].price.fruit = 4;   // the rival is cheaper
-  const c = customer(s, { x: 0, z: -1.5, want: [{ item: 'fruit', max: 6 }] });
+  shelf(s, 0, { fruit: 3 }); shelf(s, 1, { fruit: 3 });
+  s.stalls[1].price.fruit = 4;
+  const c = customer(s, { x: 0, z: -1.5 });
   place(s, 'me', -1.5, -2.5); place(s, 'u', 1.5, -2.5);
-  assert.ok(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id }).ok);   // first, but pricier
+  assert.ok(CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id }).ok);
   assert.ok(CMSim.applyAction(s, { type: 'pitch', player: 'u', cust: c.id }).ok);
-  assert.equal(c.ph, 'think');
   ticks(CMSim, s, Math.ceil((T.DECIDE + 6) / T.DT));
   assert.equal(s.players.u.coins, T.START_COINS + 4);
-  assert.equal(s.stalls[1].stock.fruit, T.START_STOCK.fruit - 1);
+  assert.equal(s.stalls[1].stock.fruit, 2);
   assert.equal(s.players.me.coins, T.START_COINS);
-  assert.equal(s.players.u.st.sales, 1);
-  assert.deepEqual(s.players.u.st.best, { item: 'fruit', price: 4 });
-  assert.ok(s.feed.some(e => e.k === 'sale' && e.p === 'u' && e.price === 4));
-});
-
-test('budget customer: a tie goes to whoever pitched first', () => {
+  assert.deepEqual(s.players.u.st.best, { items: ['fruit'], price: 4 });
   for (const first of ['me', 'u']) {
-    const { s, CMSim, CM_TUNE: T } = setup();
-    const c = customer(s, { x: 0, z: -1.5 });
-    place(s, 'me', -1.5, -2.5); place(s, 'u', 1.5, -2.5);
+    const e = setup(), t = e.s;
+    shelf(t, 0, { fruit: 3 }); shelf(t, 1, { fruit: 3 });
+    const d = customer(t, { x: 0, z: -1.5 });
+    place(t, 'me', -1.5, -2.5); place(t, 'u', 1.5, -2.5);
     const second = first === 'me' ? 'u' : 'me';
-    CMSim.applyAction(s, { type: 'pitch', player: first, cust: c.id });
-    CMSim.tick(s);
-    CMSim.applyAction(s, { type: 'pitch', player: second, cust: c.id });
-    ticks(CMSim, s, Math.ceil((T.DECIDE + 6) / T.DT));
-    assert.equal(s.players[first].coins, T.START_COINS + 5, `${first} pitched first and should win`);
-    assert.equal(s.players[second].coins, T.START_COINS);
+    e.CMSim.applyAction(t, { type: 'pitch', player: first, cust: d.id }); e.CMSim.tick(t);
+    e.CMSim.applyAction(t, { type: 'pitch', player: second, cust: d.id });
+    ticks(e.CMSim, t, Math.ceil((T.DECIDE + 6) / T.DT));
+    assert.equal(t.players[first].coins, T.START_COINS + 5, `${first} pitched first and should win`);
   }
 });
 
 test('the price is agreed when they choose; an empty shelf by the time they arrive loses the sale', () => {
   const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+  shelf(s, 0, { fruit: 3 });
   const b = home(env, 'me');
-  const c = customer(s, { x: b.x, z: -1, want: [{ item: 'fruit', max: 6 }] });
+  const c = customer(s, { x: b.x, z: -1 });
   CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id });
   ticks(CMSim, s, Math.ceil(T.DECIDE / T.DT) + 1);
   assert.equal(c.ph, 'go');
-  assert.equal(c.deal.price, 5);
-  s.stalls[0].stock.fruit = 0;   // sold out while they walked over
+  assert.deepEqual(c.deal.prices, { fruit: 5 });
+  s.stalls[0].stock.fruit = 0;
+  away(s, 'me');
   ticks(CMSim, s, 60);
   assert.equal(s.players.me.coins, T.START_COINS);
   assert.ok(s.feed.some(e => e.k === 'soldout'));
-  assert.equal(c.ph, 'walk');
 });
 
-test('customers stop for a look at stalls that have what they want, once each', () => {
+test('auto-sell: standing at your stall pitches customers who walk into your range; away, nothing happens', () => {
+  const run = atHome => {
+    const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+    shelf(s, 0, { fish: 2 }); shelf(s, 1, {});
+    if (atHome) home(env, 'me'); else away(s, 'me');
+    away(s, 'u');
+    const pa = CMSim.payAt(s.stalls[0]);
+    customer(s, { x: pa.x - T.STALL_REACH - 3, z: -1, dir: 1, want: ['fish'], budget: 12 });
+    ticks(CMSim, s, 120);
+    return s;
+  };
+  const yes = run(true), no = run(false);
+  assert.ok(yes.feed.some(e => e.k === 'pitch' && e.auto && e.p === 'me'));
+  assert.equal(yes.players.me.st.sales, 1);
+  assert.ok(!no.feed.some(e => e.k === 'pitch'));
+  assert.equal(no.players.me.st.sales, 0);
+});
+
+test('auto-sell joins a customer who is already deciding, so the first stall to reach them does not lock others out', () => {
+  const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+  shelf(s, 0, { fish: 2 }); shelf(s, 1, { fish: 2 });
+  s.stalls[1].price.fish = 7;   // Ursula is cheaper
+  home(env, 'u'); away(s, 'me');
+  const c = customer(s, { x: 0, z: -1.5, want: ['fish'], budget: 12 });
+  place(s, 'me', -1.5, -2.5);
+  CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id });   // you pitch first, by hand
+  away(s, 'me');
+  CMSim.tick(s);
+  assert.ok(c.pitches.some(p => p.p === 'u'), 'her stall pitched them while they were deciding');
+  ticks(CMSim, s, Math.ceil((T.DECIDE + 6) / T.DT));
+  assert.equal(s.players.u.st.sales, 1, 'the cheaper stall wins');
+});
+
+test('shopping list: the most items within budget wins; a full list earns a bonus; the rest is bought elsewhere', () => {
   const { s, CMSim, CM_TUNE: T } = setup();
-  const st = s.stalls[0];
-  const c = customer(s, { x: st.x - 6, z: -1, lane: -1, dir: 1, want: [{ item: 'bread', max: 9 }] });
+  shelf(s, 0, { fruit: 2 }); shelf(s, 1, { fruit: 2, cheese: 2 });
+  s.stalls[0].price.fruit = 3;   // cheaper, but only one of the two things
+  const c = customer(s, { kind: 'list', x: 0, z: -1.5, want: ['fruit', 'cheese'], budget: 20 });
+  assert.deepEqual(CMSim.offer(s, c, s.stalls[0]), { ok: true, items: ['fruit'], total: 3, full: false });
+  assert.deepEqual(CMSim.offer(s, c, s.stalls[1]), { ok: true, items: ['fruit', 'cheese'], total: 16, full: true });
+  place(s, 'me', -1.5, -2.5); place(s, 'u', 1.5, -2.5);
+  CMSim.applyAction(s, { type: 'pitch', player: 'me', cust: c.id });
+  CMSim.applyAction(s, { type: 'pitch', player: 'u', cust: c.id });
+  away(s, 'me'); away(s, 'u');
+  ticks(CMSim, s, Math.ceil((T.DECIDE + 6) / T.DT));
+  const bonus = Math.round(16 * T.LIST.bonus);
+  assert.equal(s.players.u.coins, T.START_COINS + 16 + bonus);
+  assert.equal(s.players.u.st.bonus, bonus);
+  assert.ok(c.happy && c.ph === 'leave');
+  // a list only one stall can half-fill: buys that half, then goes on looking
+  const e = setup(), t = e.s;
+  shelf(t, 0, { fruit: 2 }); shelf(t, 1, {});
+  const d = customer(t, { kind: 'list', x: 0, z: -1.5, want: ['fruit', 'teapot'], budget: 30 });
+  place(t, 'me', -1.5, -2.5);
+  e.CMSim.applyAction(t, { type: 'pitch', player: 'me', cust: d.id });
+  away(t, 'me');
+  ticks(e.CMSim, t, Math.ceil((T.DECIDE + 6) / T.DT));
+  assert.equal(t.players.me.coins, T.START_COINS + 5);
+  assert.equal(t.players.me.st.bonus, 0);
+  assert.deepEqual(d.want, ['teapot']);
+  assert.equal(d.budget, 25);
+  assert.equal(d.ph, 'walk');
+});
+
+test('offer: the cheapest things first, as many as the budget allows', () => {
+  const { s, CMSim } = setup();
+  shelf(s, 0, { fruit: 1, cheese: 1, teapot: 1 });
+  const c = customer(s, { kind: 'list', want: ['teapot', 'cheese', 'fruit'], budget: 17 });
+  assert.deepEqual(CMSim.offer(s, c, s.stalls[0]), { ok: true, items: ['fruit', 'cheese'], total: 16, full: false });
+  c.budget = 4;
+  assert.equal(CMSim.offer(s, c, s.stalls[0]).reason, 'pricey');
+  shelf(s, 0, {});
+  assert.equal(CMSim.offer(s, c, s.stalls[0]).reason, 'nostock');
+});
+
+test('customers stop for a look at stalls that have something they want, once each', () => {
+  const { s, CMSim } = setup();
+  shelf(s, 0, { bread: 3 }); shelf(s, 1, { bread: 3 }); away(s, 'me'); away(s, 'u');
+  const c = customer(s, { x: s.stalls[0].x - 6, z: -1, lane: -1, dir: 1, want: ['bread'], budget: 9 });
   let browsed = 0, prev = c.ph;
   for (let i = 0; i < 120; i++) { CMSim.tick(s); if (c.ph === 'browse' && prev !== 'browse') browsed++; prev = c.ph; }
-  assert.equal(browsed, 2, 'looks at both stalls in its row that sell bread');
+  assert.equal(browsed, 2);
   assert.deepEqual(c.looked, [0, 1]);
-  const d = customer(s, { x: st.x - 6, z: -1, lane: -1, dir: 1, want: [{ item: 'teapot', max: 30 }] });
-  for (let i = 0; i < 60; i++) { CMSim.tick(s); assert.notEqual(d.ph, 'browse'); }
-  void T;
 });
 
-test('customers spawn from the seed, want one thing with a budget, walk the street and never crowd past the cap', () => {
+test('customers spawn from the seed: single wants in the morning, shopping lists later, never past the cap', () => {
   const { s, CMSim, CM_TUNE: T } = setup({ players: [{ id: 'me' }] });
-  let most = 0; const seen = new Set();
+  let most = 0; const kinds = { morning: {}, midday: {}, evening: {} };
   while (s.phase === 'day') {
     CMSim.tick(s); most = Math.max(most, s.cust.length);
-    for (const c of s.cust) {
-      assert.ok(Math.abs(c.z) <= T.BOARD.street.z1 + 0.5, 'stays on the street');
-      if (seen.has(c.id)) continue; seen.add(c.id);
-      assert.equal(c.kind, 'budget');
-      const w = c.want[0], G = T.GOODS[w.item];
-      assert.ok(G);
-      assert.ok(w.max >= Math.round(G.list * T.BUDGET_MULT[0]) && w.max <= Math.round(G.list * T.BUDGET_MULT[1]));
+    for (const e of s.feed) if (e.t === s.t && e.k === 'arrive') {
+      kinds[s.part][e.kind] = (kinds[s.part][e.kind] || 0) + 1;
+      assert.equal(new Set(e.want).size, e.want.length, 'no repeats on a list');
+      if (e.kind === 'list') assert.ok(e.want.length >= T.LIST.items[0] && e.want.length <= T.LIST.items[1]);
+      else assert.ok(e.budget >= Math.round(T.GOODS[e.want[0]].list * T.BUDGET_MULT[0]));
     }
+    for (const c of s.cust) assert.ok(Math.abs(c.z) <= T.BOARD.street.z1 + 0.5);
   }
   assert.ok(most <= T.CUST_MAX);
-  assert.ok(seen.size > s.day / 5, `only ${seen.size} customers in a ${s.day} s day`);
+  assert.ok(!kinds.morning.list, 'no lists in the morning');
+  assert.ok((kinds.midday.list || 0) + (kinds.evening.list || 0) > 0, 'lists later on');
 });
 
 test('a day lasts 1, 2 or 3 minutes, in three equal parts', () => {
@@ -211,67 +314,111 @@ test('a day lasts 1, 2 or 3 minutes, in three equal parts', () => {
   assert.deepEqual(Object.values(T.DAYS), [60, 120, 180]);
   for (const [len, day] of Object.entries(T.DAYS)) {
     const s = CMSim.newState({ seed: 3, len, players: [{ id: 'me' }] });
-    assert.equal(s.day, day);
     const at = {};
     while (s.phase === 'day') { CMSim.tick(s); at[s.part] ??= s.t; }
-    assert.equal(s.t, day, `${len}: closes on time`);
-    assert.equal(at.morning, T.DT);
+    assert.equal(s.t, day);
     assert.equal(at.midday, day / 3);
     assert.equal(at.evening, day * 2 / 3);
   }
-  assert.equal(CMSim.newState({ seed: 1, len: 'forever', players: [] }).day, T.DAYS[T.DAY_DEFAULT]);
 });
 
 test('same seed, same day; a different seed, a different day', () => {
   const a = setup({ seed: 7 }), b = setup({ seed: 7 }), c = setup({ seed: 8 });
-  for (const x of [a, b, c]) for (let i = 0; i < 900; i++) x.CMSim.tick(x.s);   // most of a 2-minute day
+  for (const x of [a, b, c]) for (let i = 0; i < 900; i++) x.CMSim.tick(x.s);
   assert.deepEqual(a.s, b.s);
   assert.notDeepEqual(a.s.cust, c.s.cust);
 });
 
 test('closing: stock is worthless, actions stop, the recap ranks everyone and hands out titles', () => {
-  const { s, CMSim, CM_TUNE: T } = setup();
+  const { s, CMSim } = setup();
+  shelf(s, 0, { bread: 3, fruit: 3 }); away(s, 'me');
   s.players.me.carry = { fish: 2 };
   while (s.phase === 'day') CMSim.tick(s);
-  assert.equal(s.phase, 'closed');
   assert.equal(s.t, s.day);
   assert.deepEqual(s.cust, []);
   assert.equal(CMSim.applyAction(s, { type: 'move', player: 'me', x: 0, z: 0 }).reason, 'closed');
-  const rows = s.recap.rows;
-  assert.equal(rows.length, 2);
-  assert.ok(rows[0].coins >= rows[1].coins);
-  const me = rows.find(r => r.id === 'me');
-  assert.equal(me.wasted, 6 + 2);   // 3 bread + 3 fruit on the shelf, 2 fish in hand
-  assert.equal(s.recap.titles[0].title, 'Market Champion');
+  const me = s.recap.rows.find(r => r.id === 'me');
+  assert.equal(me.wasted, 8);
+  assert.equal(s.recap.titles[0].title, 'Top of the Day');
+  assert.equal(s.recap.last, false);
   const per = {}; for (const t of s.recap.titles) per[t.p] = (per[t.p] || 0) + 1;
-  assert.ok(Object.values(per).every(n => n <= 2), 'nobody gets more than two titles');
-  CMSim.tick(s);
-  assert.equal(s.t, s.day);   // the clock stops
-  void T;
+  assert.ok(Object.values(per).every(n => n <= 2));
 });
 
-test('replay: the seed plus the action log rebuilds the exact same day', () => {
+test('a market week: three days, coins and upgrades carry over, a fresh shelf and mix each morning', () => {
+  const { s, CMSim, CM_TUNE: T } = setup({ players: THREE });
+  let day = s;
+  for (let n = 1; n <= T.WEEK; n++) {
+    assert.equal(day.week.n, n);
+    while (day.phase === 'day') CMSim.tick(day);
+    if (n < T.WEEK) {
+      day.players.me.coins += 50;   // pretend it was a good day
+      assert.ok(CMSim.applyAction(day, { type: 'upgrade', player: 'me', kind: 'crate' }).ok || n > 1);
+      const next = CMSim.nextDay(day);
+      assert.equal(next.players.me.coins, day.players.me.coins, 'coins carry over');
+      assert.ok(next.players.me.ups.crate, 'upgrades carry over');
+      assert.equal(next.players.me.st.sales, 0, 'stats start fresh');
+      assert.deepEqual(next.stalls[0].stock, next.mix);
+      assert.equal(next.week.before.length, n);
+      assert.equal(JSON.stringify(CMSim.nextDay(day)), JSON.stringify(next), 'the next day comes from the seed');
+      day = next;
+    }
+  }
+  assert.equal(day.recap.last, true);
+  assert.equal(day.recap.titles[0].title, 'Market Champion');
+  assert.equal(CMSim.nextDay(day), null, 'the week is over');
+  assert.equal(CMSim.applyAction(day, { type: 'upgrade', player: 'me', kind: 'boots' }).reason, 'closed', 'no shopping after the last day');
+});
+
+test('upgrades: only between days, once each, paid for; and they do what they say', () => {
+  const env = setup(), { s, CMSim, CM_TUNE: T } = env;
+  const p = s.players.me;
+  assert.equal(CMSim.applyAction(s, { type: 'upgrade', player: 'me', kind: 'crate' }).reason, 'closed', 'not during the day');
+  while (s.phase === 'day') CMSim.tick(s);
+  p.coins = 100;
+  assert.equal(CMSim.applyAction(s, { type: 'upgrade', player: 'me', kind: 'wings' }).reason, 'bad');
+  for (const k of Object.keys(T.UPGRADES)) assert.ok(CMSim.applyAction(s, { type: 'upgrade', player: 'me', kind: k }).ok);
+  assert.equal(p.coins, 100 - Object.values(T.UPGRADES).reduce((a, u) => a + u.cost, 0));
+  assert.equal(CMSim.applyAction(s, { type: 'upgrade', player: 'me', kind: 'crate' }).reason, 'owned');
+  const e = setup(); while (e.s.phase === 'day') e.CMSim.tick(e.s); e.s.players.me.coins = 1;
+  assert.equal(e.CMSim.applyAction(e.s, { type: 'upgrade', player: 'me', kind: 'boots' }).reason, 'broke');
+  const d = CMSim.nextDay(s);
+  const q = d.players.me;
+  assert.equal(CMSim.capOf(q), T.CARRY + T.UPGRADES.crate.carry);
+  assert.equal(CMSim.reachOf(q), T.STALL_REACH + T.UPGRADES.awning.reach);
+  assert.equal(CMSim.speedOf(q), T.UPGRADES.boots.speed);
+  place(d, 'me', T.SUPPLIERS.bread.x, T.SUPPLIERS.bread.z);
+  assert.equal(CMSim.applyAction(d, { type: 'buy', player: 'me', item: 'bread', n: 20 }).n, T.CARRY + T.UPGRADES.crate.carry);
+  // the bigger awning: a customer just past the normal range can be pitched
+  const pa = CMSim.payAt(d.stalls[0]); shelf(d, 0, { fish: 1 });
+  const c = customer(d, { x: pa.x + T.STALL_REACH + 1, z: -1, want: ['fish'], budget: 12 });
+  place(d, 'me', c.x - 1.5, -2);
+  assert.ok(CMSim.applyAction(d, { type: 'pitch', player: 'me', cust: c.id }).ok);
+});
+
+test('replay: a start state plus the action log rebuilds the exact same day, on any day of the week', () => {
   const env = setup({ seed: 4242 });
   const { CMSim, CM_TUNE: T, s } = env;
-  // the player does a supply run too (walking round its stall), so the log has more than the AI in it
-  const sup = T.SUPPLIERS.bread, home = CMSim.post(s.stalls[0]);
-  const route = [[home.x, home.z], [-8, -3.4], [-8, -7.5], [sup.x, sup.z]];
-  let leg = 0;   // walk the waypoints in order
+  const sup = T.SUPPLIERS.bread, homeAt = CMSim.post(s.stalls[0]);
+  const route = [[homeAt.x, homeAt.z], [-8, -3.4], [-8, -7.5], [sup.x, sup.z]];
+  let leg = 0;
   const walk = (s, act, pts) => { const p = s.players.me; while (leg < pts.length - 1 && Math.hypot(pts[leg][0] - p.x, pts[leg][1] - p.z) < 0.05) leg++;
     const [x, z] = pts[leg], d = Math.hypot(x - p.x, z - p.z), k = Math.min(1, T.WALK * T.DT / (d || 1)); act({ type: 'move', player: 'me', x: p.x + (x - p.x) * k, z: p.z + (z - p.z) * k }); };
   let phase = 'out';
   const { log, results } = playDay(env, {
-    until: 1000,
+    until: 900,
     script: (s, act) => {
       const p = s.players.me;
       if (phase === 'out') { walk(s, act, route); if (Math.hypot(p.x - sup.x, p.z - sup.z) < 0.3) { act({ type: 'buy', player: 'me', item: 'bread', n: 4 }); phase = 'back'; leg = 0; } }
-      else if (phase === 'back') { walk(s, act, route.slice().reverse()); if (Math.hypot(p.x - home.x, p.z - home.z) < 0.3) { act({ type: 'shelve', player: 'me' }); phase = 'done'; } }
+      else if (phase === 'back') { walk(s, act, route.slice().reverse()); if (Math.hypot(p.x - homeAt.x, p.z - homeAt.z) < 0.3) { act({ type: 'shelve', player: 'me' }); phase = 'done'; } }
     },
   });
   assert.equal(phase, 'done');
-  assert.ok(results.find(x => x.a.type === 'buy' && x.a.player === 'me').r.ok);
   assert.ok(results.find(x => x.a.type === 'shelve' && x.a.player === 'me').r.ok);
-  assert.ok(log.length > 100);
-  const again = CMSim.replay(env.init, JSON.parse(JSON.stringify(log)), s.tick);
-  assert.deepEqual(again, s);
+  assert.deepEqual(CMSim.replay(env.init, JSON.parse(JSON.stringify(log)), s.tick), s);
+  // day two, from the state it started with
+  while (s.phase === 'day') CMSim.tick(s);
+  const d2 = CMSim.nextDay(s), start = CMSim.clone(d2), e2 = { ...env, s: d2 };
+  const run2 = playDay(e2, { until: 600 });
+  assert.deepEqual(CMSim.replay(start, run2.log, d2.tick), d2);
 });

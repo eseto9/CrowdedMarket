@@ -158,6 +158,8 @@ const CM_STYLES={
   say:{bg:'#2B2040',fg:'#FFFFFF',r:26,tail:true},
   sign:{bg:'#FFF3D6',fg:'#2B2040',r:18},
   name:{bg:'#2B2040',fg:'#FFFFFF',r:30},
+  list:{bg:'#E4F1FF',fg:'#2B2040',r:26,tail:true},
+  war:{bg:'#FF6F61',fg:'#FFFFFF',r:26},
 };
 function cmSprite(h){
   const c=document.createElement('canvas');c.width=64;c.height=64;

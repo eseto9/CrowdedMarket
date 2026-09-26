@@ -28,8 +28,9 @@
       <li>🏃 Walk with <kbd>WASD</kbd>, dash with <kbd>Space</kbd>, or just click where to go.</li>
       <li>🥖 Suppliers ring the market. Stand in a yellow ring and press <kbd>E</kbd> (or click it) to buy stock.</li>
       <li>🧺 Take it back to your stall and put it on the shelf.</li>
-      <li>🗣️ Customers show what they want and the most they’ll pay. Pitch to anyone inside the ring round your stall. The cheapest pitch wins.</li>
-      <li>🪙 Most coins at the closing bell wins. Leftover stock is worth nothing!</li>
+      <li>🗣️ Customers show what they want and the most they’ll spend. Stand at your stall and you sell to anyone in your ring; the cheapest offer wins.</li>
+      <li>🏷️ Press <kbd>P</kbd> at your stall to set prices. Blue bubbles are shopping lists: sell the whole list for a bonus.</li>
+      <li>🪙 Three days make a market week. Coins carry over, and you can buy upgrades between days. Leftover stock is worth nothing!</li>
     </ol>
     <div class="btnrow"><button class="btn big" id="startBtn" type="button">🧺 Open your stall</button></div>
   </div>
@@ -48,12 +49,14 @@
     <kbd>Space</kbd><span>Dash</span>
     <kbd>Click</kbd><span>Go there and act</span>
     <kbd>E</kbd><span>Buy · shelve · pitch</span>
+    <kbd>P</kbd><span>Your prices (at your stall)</span>
     <kbd>Shift+E</kbd><span>Buy an armful</span>
     <kbd>Tab</kbd><span>Market summary (hold)</span>
     <kbd>1–5</kbd><span>Wave, point, dance…</span>
     <kbd>H</kbd><span>Hide this</span>
   </div>
-  <div id="touchBtns"><button id="tAll" type="button">🧺 Armful</button><button id="tAct" type="button">✋ Act</button><button id="tDash" type="button">💨 Dash</button></div>
+  <div id="prices" class="panel" hidden></div>
+  <div id="touchBtns"><button id="tPrices" type="button" hidden>🏷️ Prices</button><button id="tAll" type="button">🧺 Armful</button><button id="tAct" type="button">✋ Act</button><button id="tDash" type="button">💨 Dash</button></div>
   <div id="tab" class="panel" hidden></div>
 </div>
 <div id="recap" hidden><div class="panel" id="recapBody"></div></div>
